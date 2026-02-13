@@ -39,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly ObservableCollection<ProxyNode> _nodes;
     private ProxyNode? _selectedNode;
     private string _connectButtonText;
+    private string _logLevel;
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
     {
@@ -59,6 +60,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
             : _nodes.FirstOrDefault();
         _connectButtonText = "连接";
+        _logLevel = string.IsNullOrWhiteSpace(settings.LogLevel) ? "info" : settings.LogLevel;
         _statusText = "未启动";
 
         BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
@@ -163,6 +165,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             _enableSystemProxy = value;
             OnPropertyChanged();
+        }
+    }
+
+    public string LogLevel
+    {
+        get => _logLevel;
+        set
+        {
+            if (_logLevel == value)
+            {
+                return;
+            }
+
+            _logLevel = value;
+            OnPropertyChanged();
+            _ = PersistSelectionAsync();
         }
     }
 
@@ -295,6 +313,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
+        if (!IsLocalPortAvailable(mixedPort))
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, $"端口被占用：127.0.0.1:{mixedPort}（请改端口或关闭占用进程）"));
+            StatusText = "端口被占用";
+            return;
+        }
+
         if (SelectedNode is not null)
         {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(SelectedNode)));
@@ -315,7 +340,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             EnableSystemProxy: EnableSystemProxy,
             SubscriptionUrl: SubscriptionUrl,
             Nodes: _nodes.ToList(),
-            SelectedNodeId: SelectedNode?.Id
+            SelectedNodeId: SelectedNode?.Id,
+            LogLevel: LogLevel
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -587,11 +613,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 Nodes = _nodes.ToList(),
                 SelectedNodeId = SelectedNode?.Id,
                 SubscriptionUrl = SubscriptionUrl,
+                LogLevel = LogLevel,
             };
             await _settingsStore.SaveAsync(_settings);
         }
         catch
         {
+        }
+    }
+
+    private static bool IsLocalPortAvailable(int port)
+    {
+        try
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 

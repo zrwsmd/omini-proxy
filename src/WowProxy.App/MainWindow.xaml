@@ -32,6 +32,9 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="120" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="100" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -43,6 +46,13 @@
 
             <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="16,0,8,0" Text="Secret" />
             <TextBox Grid.Column="5" Text="{Binding ClashApiSecret, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock Grid.Column="6" VerticalAlignment="Center" Margin="16,0,8,0" Text="日志级别" />
+            <ComboBox Grid.Column="7" SelectedValuePath="Content" SelectedValue="{Binding LogLevel, UpdateSourceTrigger=PropertyChanged}">
+                <ComboBoxItem Content="info" />
+                <ComboBoxItem Content="debug" />
+                <ComboBoxItem Content="trace" />
+            </ComboBox>
         </Grid>
 
         <Border Grid.Row="2" BorderThickness="1" BorderBrush="#DDD" Padding="8" Margin="0,0,0,12">

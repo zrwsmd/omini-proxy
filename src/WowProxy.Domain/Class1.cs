@@ -9,7 +9,8 @@ public sealed record AppSettings(
     bool EnableSystemProxy,
     string? SubscriptionUrl = null,
     List<ProxyNode>? Nodes = null,
-    string? SelectedNodeId = null
+    string? SelectedNodeId = null,
+    string LogLevel = "info"
 )
 {
     public static AppSettings Default =>
@@ -22,6 +23,7 @@ public sealed record AppSettings(
             EnableSystemProxy: false,
             SubscriptionUrl: null,
             Nodes: null,
-            SelectedNodeId: null
+            SelectedNodeId: null,
+            LogLevel: "info"
         );
 }
