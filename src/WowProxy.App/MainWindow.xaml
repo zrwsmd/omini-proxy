@@ -97,11 +97,32 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <ListBox
-                        Height="120"
-                        DisplayMemberPath="Name"
+                    <DataGrid
+                        Height="180"
                         ItemsSource="{Binding Nodes}"
-                        SelectedItem="{Binding SelectedNode, Mode=TwoWay}" />
+                        SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                        AutoGenerateColumns="False"
+                        IsReadOnly="True"
+                        SelectionMode="Single"
+                        HeadersVisibility="Column"
+                        GridLinesVisibility="Horizontal"
+                        BorderThickness="1"
+                        BorderBrush="#ABADB3">
+                        <DataGrid.Resources>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2E8B57"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2E8B57"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+                        </DataGrid.Resources>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="90"/>
+                            <DataGridTextColumn Header="别名" Binding="{Binding Name}" Width="*"/>
+                            <DataGridTextColumn Header="地址" Binding="{Binding Server}" Width="140"/>
+                            <DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="60"/>
+                            <DataGridTextColumn Header="传输" Binding="{Binding TransportType}" Width="60"/>
+                            <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled}" Width="40"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
                     <StackPanel Grid.Column="1" Margin="8,0,0,0">
                         <Button Padding="12,6" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" />
                         <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="TUN 模式" IsChecked="{Binding EnableTun}" />
