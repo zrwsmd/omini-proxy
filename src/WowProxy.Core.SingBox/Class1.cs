@@ -145,14 +145,72 @@ public sealed class SingBoxConfigFactory
 
     private static void ApplyTlsAndTransport(Dictionary<string, object?> outbound, ProxyNode node)
     {
-        if (node.TlsEnabled || !string.IsNullOrWhiteSpace(node.TlsServerName))
+        var isWs = string.Equals(node.TransportType, "ws", StringComparison.OrdinalIgnoreCase);
+        if (string.Equals(node.Security, "reality", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrWhiteSpace(node.RealityPublicKey))
         {
-            outbound["tls"] = new
+            var tls = new Dictionary<string, object?>
             {
-                enabled = true,
-                server_name = node.TlsServerName ?? string.Empty,
-                insecure = false,
+                ["enabled"] = true,
+                ["server_name"] = node.TlsServerName ?? string.Empty,
+                ["insecure"] = node.TlsInsecure,
+                ["reality"] = new
+                {
+                    enabled = true,
+                    public_key = node.RealityPublicKey ?? string.Empty,
+                    short_id = node.RealityShortId ?? string.Empty,
+                },
             };
+
+            var alpn = SplitAlpn(node.TlsAlpn);
+            if (alpn is not null)
+            {
+                tls["alpn"] = alpn;
+            }
+            else if (isWs)
+            {
+                tls["alpn"] = new[] { "http/1.1" };
+            }
+
+            if (!string.IsNullOrWhiteSpace(node.UtlsFingerprint))
+            {
+                tls["utls"] = new
+                {
+                    enabled = true,
+                    fingerprint = node.UtlsFingerprint,
+                };
+            }
+
+            outbound["tls"] = tls;
+        }
+        else if (node.TlsEnabled || !string.IsNullOrWhiteSpace(node.TlsServerName))
+        {
+            var tls = new Dictionary<string, object?>
+            {
+                ["enabled"] = true,
+                ["server_name"] = node.TlsServerName ?? string.Empty,
+                ["insecure"] = node.TlsInsecure,
+            };
+
+            var alpn = SplitAlpn(node.TlsAlpn);
+            if (alpn is not null)
+            {
+                tls["alpn"] = alpn;
+            }
+            else if (isWs)
+            {
+                tls["alpn"] = new[] { "http/1.1" };
+            }
+
+            if (!string.IsNullOrWhiteSpace(node.UtlsFingerprint))
+            {
+                tls["utls"] = new
+                {
+                    enabled = true,
+                    fingerprint = node.UtlsFingerprint,
+                };
+            }
+
+            outbound["tls"] = tls;
         }
 
         if (string.Equals(node.TransportType, "ws", StringComparison.OrdinalIgnoreCase))
@@ -162,12 +220,20 @@ public sealed class SingBoxConfigFactory
             {
                 headers["Host"] = node.TransportHost;
             }
+            else if (!string.IsNullOrWhiteSpace(node.TlsServerName))
+            {
+                headers["Host"] = node.TlsServerName;
+            }
+
+            var (path, maxEarlyData) = NormalizeWsPathAndEarlyData(node.TransportPath);
 
             outbound["transport"] = new
             {
                 type = "ws",
-                path = string.IsNullOrWhiteSpace(node.TransportPath) ? "/" : node.TransportPath,
+                path = path,
                 headers = headers.Count == 0 ? null : headers,
+                max_early_data = maxEarlyData,
+                early_data_header_name = maxEarlyData is > 0 ? "Sec-WebSocket-Protocol" : string.Empty,
             };
         }
         else if (string.Equals(node.TransportType, "grpc", StringComparison.OrdinalIgnoreCase))
@@ -178,6 +244,77 @@ public sealed class SingBoxConfigFactory
                 service_name = string.IsNullOrWhiteSpace(node.TransportPath) ? "TunService" : node.TransportPath,
             };
         }
+    }
+
+    private static (string Path, int MaxEarlyData) NormalizeWsPathAndEarlyData(string? path)
+    {
+        var p = string.IsNullOrWhiteSpace(path) ? "/" : path.Trim();
+        if (!p.StartsWith('/'))
+        {
+            p = "/" + p;
+        }
+
+        var maxEarlyData = 0;
+        var queryIndex = p.IndexOf('?');
+        if (queryIndex >= 0)
+        {
+            var query = p[(queryIndex + 1)..];
+            foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!part.StartsWith("ed=", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var value = part["ed=".Length..];
+                if (int.TryParse(value, out var ed) && ed > 0)
+                {
+                    maxEarlyData = ed;
+                }
+                break;
+            }
+            p = p[..queryIndex];
+        }
+        else
+        {
+            var edIndex = p.IndexOf("ed=", StringComparison.OrdinalIgnoreCase);
+            if (edIndex >= 0)
+            {
+                var start = edIndex + 3;
+                var end = start;
+                while (end < p.Length && char.IsDigit(p[end]))
+                {
+                    end++;
+                }
+
+                if (end > start && int.TryParse(p[start..end], out var ed) && ed > 0)
+                {
+                    maxEarlyData = ed;
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(p))
+        {
+            p = "/";
+        }
+
+        return (p, maxEarlyData);
+    }
+
+    private static string[]? SplitAlpn(string? alpn)
+    {
+        if (string.IsNullOrWhiteSpace(alpn))
+        {
+            return null;
+        }
+
+        var parts = alpn
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(p => p.Length > 0)
+            .ToArray();
+
+        return parts.Length == 0 ? null : parts;
     }
 
     public async Task WriteAsync(AppSettings settings, string configPath, CancellationToken cancellationToken = default)

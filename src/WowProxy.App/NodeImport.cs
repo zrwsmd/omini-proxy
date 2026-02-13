@@ -195,9 +195,17 @@ internal static class NodeImport
 
         var query = ParseQuery(uri.Query);
         var security = query.TryGetValue("security", out var sec) ? sec : null;
-        var tlsEnabled = string.Equals(security, "tls", StringComparison.OrdinalIgnoreCase);
+        var tlsEnabled = string.Equals(security, "tls", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(security, "reality", StringComparison.OrdinalIgnoreCase);
         var sni = query.TryGetValue("sni", out var sniValue) ? sniValue : null;
         var flow = query.TryGetValue("flow", out var flowValue) ? flowValue : null;
+        var fp = query.TryGetValue("fp", out var fpValue) ? fpValue : null;
+        var pbk = query.TryGetValue("pbk", out var pbkValue) ? pbkValue : null;
+        var sid = query.TryGetValue("sid", out var sidValue) ? sidValue : null;
+        var alpn = query.TryGetValue("alpn", out var alpnValue) ? alpnValue : null;
+        var insecure =
+            (query.TryGetValue("allowInsecure", out var allowInsecureValue) && allowInsecureValue is "1" or "true" or "True")
+            || (query.TryGetValue("insecure", out var insecureValue) && insecureValue is "1" or "true" or "True");
 
         var transport = query.TryGetValue("type", out var typeValue) ? typeValue : null;
         transport ??= query.TryGetValue("transport", out var transportValue) ? transportValue : null;
@@ -205,20 +213,32 @@ internal static class NodeImport
 
         var host = query.TryGetValue("host", out var hostValue) ? hostValue : null;
         var path = query.TryGetValue("path", out var pathValue) ? pathValue : null;
+        path = NormalizePath(path);
 
         var name = !string.IsNullOrWhiteSpace(uri.Fragment) ? uri.Fragment.TrimStart('#') : $"{uri.Host}:{uri.Port}";
         name = Uri.UnescapeDataString(name);
+
+        var port = uri.Port;
+        if (port <= 0)
+        {
+            port = tlsEnabled ? 443 : 80;
+        }
 
         node = new ProxyNode(
             Id: ProxyNode.IdFromRaw(raw),
             Type: ProxyNodeType.Vless,
             Name: string.IsNullOrWhiteSpace(name) ? $"{uri.Host}:{uri.Port}" : name,
             Server: uri.Host,
-            Port: uri.Port,
+            Port: port,
             Uuid: uuid,
             Security: security,
             TlsEnabled: tlsEnabled,
             TlsServerName: string.IsNullOrWhiteSpace(sni) ? null : sni,
+            TlsInsecure: insecure,
+            TlsAlpn: string.IsNullOrWhiteSpace(alpn) ? null : alpn,
+            UtlsFingerprint: string.IsNullOrWhiteSpace(fp) ? null : fp,
+            RealityPublicKey: string.IsNullOrWhiteSpace(pbk) ? null : pbk,
+            RealityShortId: string.IsNullOrWhiteSpace(sid) ? null : sid,
             Flow: flow,
             TransportType: transport,
             TransportHost: string.IsNullOrWhiteSpace(host) ? null : host,
@@ -249,7 +269,12 @@ internal static class NodeImport
 
         var query = ParseQuery(uri.Query);
         var security = query.TryGetValue("security", out var sec) ? sec : null;
-        var tlsEnabled = string.Equals(security, "tls", StringComparison.OrdinalIgnoreCase) || uri.Port == 443;
+        var fp = query.TryGetValue("fp", out var fpValue) ? fpValue : null;
+        var alpn = query.TryGetValue("alpn", out var alpnValue) ? alpnValue : null;
+        var insecure =
+            (query.TryGetValue("allowInsecure", out var allowInsecureValue) && allowInsecureValue is "1" or "true" or "True")
+            || (query.TryGetValue("insecure", out var insecureValue) && insecureValue is "1" or "true" or "True");
+        var tlsEnabled = !string.Equals(security, "none", StringComparison.OrdinalIgnoreCase);
         var sni = query.TryGetValue("sni", out var sniValue) ? sniValue : null;
 
         var transport = query.TryGetValue("type", out var typeValue) ? typeValue : null;
@@ -257,8 +282,15 @@ internal static class NodeImport
 
         var host = query.TryGetValue("host", out var hostValue) ? hostValue : null;
         var path = query.TryGetValue("path", out var pathValue) ? pathValue : null;
+        path = NormalizePath(path);
 
-        var name = !string.IsNullOrWhiteSpace(uri.Fragment) ? uri.Fragment.TrimStart('#') : $"{uri.Host}:{uri.Port}";
+        var port = uri.Port;
+        if (port <= 0)
+        {
+            port = 443;
+        }
+
+        var name = !string.IsNullOrWhiteSpace(uri.Fragment) ? uri.Fragment.TrimStart('#') : $"{uri.Host}:{port}";
         name = Uri.UnescapeDataString(name);
 
         node = new ProxyNode(
@@ -266,11 +298,14 @@ internal static class NodeImport
             Type: ProxyNodeType.Trojan,
             Name: string.IsNullOrWhiteSpace(name) ? $"{uri.Host}:{uri.Port}" : name,
             Server: uri.Host,
-            Port: uri.Port,
+            Port: port,
             Password: password,
             Security: security,
             TlsEnabled: tlsEnabled,
             TlsServerName: string.IsNullOrWhiteSpace(sni) ? null : sni,
+            TlsInsecure: insecure,
+            TlsAlpn: string.IsNullOrWhiteSpace(alpn) ? null : alpn,
+            UtlsFingerprint: string.IsNullOrWhiteSpace(fp) ? null : fp,
             TransportType: transport,
             TransportHost: string.IsNullOrWhiteSpace(host) ? null : host,
             TransportPath: string.IsNullOrWhiteSpace(path) ? null : path,
@@ -304,6 +339,10 @@ internal static class NodeImport
         var path = GetString(root, "path");
         var tls = GetString(root, "tls");
         var sni = GetString(root, "sni");
+        var fp = GetString(root, "fp");
+        var alpn = GetString(root, "alpn");
+        var allowInsecure = GetString(root, "allowInsecure") ?? GetString(root, "allowinsecure");
+        var insecure = allowInsecure is "1" or "true" or "True";
         var ps = GetString(root, "ps");
 
         if (string.IsNullOrWhiteSpace(server) || !int.TryParse(portText, out var port) || port is < 1 or > 65535 || string.IsNullOrWhiteSpace(uuid))
@@ -320,7 +359,12 @@ internal static class NodeImport
         }
 
         var tlsEnabled = string.Equals(tls, "tls", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(sni) && tlsEnabled && !string.IsNullOrWhiteSpace(host))
+        {
+            sni = host;
+        }
         var name = string.IsNullOrWhiteSpace(ps) ? $"{server}:{port}" : ps;
+        path = NormalizePath(path);
 
         node = new ProxyNode(
             Id: ProxyNode.IdFromRaw(raw),
@@ -333,6 +377,9 @@ internal static class NodeImport
             Security: "auto",
             TlsEnabled: tlsEnabled,
             TlsServerName: string.IsNullOrWhiteSpace(sni) ? null : sni,
+            TlsInsecure: insecure,
+            TlsAlpn: string.IsNullOrWhiteSpace(alpn) ? null : alpn,
+            UtlsFingerprint: string.IsNullOrWhiteSpace(fp) ? null : fp,
             TransportType: string.IsNullOrWhiteSpace(net) ? null : net,
             TransportHost: string.IsNullOrWhiteSpace(host) ? null : host,
             TransportPath: string.IsNullOrWhiteSpace(path) ? null : path,
@@ -474,5 +521,21 @@ internal static class NodeImport
             JsonValueKind.False => "false",
             _ => prop.GetRawText(),
         };
+    }
+
+    private static string? NormalizePath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var p = path.Trim();
+        if (!p.StartsWith('/'))
+        {
+            p = "/" + p;
+        }
+
+        return p;
     }
 }

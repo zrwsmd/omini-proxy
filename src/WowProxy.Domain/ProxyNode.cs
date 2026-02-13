@@ -24,6 +24,11 @@ public sealed record ProxyNode(
     string? Security = null,
     bool TlsEnabled = false,
     string? TlsServerName = null,
+    bool TlsInsecure = false,
+    string? TlsAlpn = null,
+    string? UtlsFingerprint = null,
+    string? RealityPublicKey = null,
+    string? RealityShortId = null,
     string? Flow = null,
     string? TransportType = null,
     string? TransportHost = null,
@@ -37,4 +42,3 @@ public sealed record ProxyNode(
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }
-

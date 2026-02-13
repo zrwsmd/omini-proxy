@@ -91,7 +91,9 @@
                         ItemsSource="{Binding Nodes}"
                         SelectedItem="{Binding SelectedNode, Mode=TwoWay}" />
                     <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                        <Button Padding="12,6" Content="应用节点" Command="{Binding ApplyNodeCommand}" />
+                        <Button Padding="12,6" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" />
+                    <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
+                    <TextBlock Margin="0,8,0,0" Text="{Binding StatusText}" />
                         <Button Margin="0,8,0,0" Padding="12,6" Content="清空" Command="{Binding ClearNodesCommand}" />
                     </StackPanel>
                 </Grid>
@@ -100,26 +102,10 @@
 
         <Grid Grid.Row="3">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <Button Padding="16,6" Content="启动" Command="{Binding StartCommand}" />
-                <Button Grid.Column="1" Margin="8,0,0,0" Padding="16,6" Content="停止" Command="{Binding StopCommand}" />
-                <CheckBox Grid.Column="2" Margin="16,0,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
-                <TextBlock Grid.Column="3" VerticalAlignment="Center" Margin="16,0,0,0" Text="{Binding StatusText}" />
-            </Grid>
-
             <TextBox
-                Grid.Row="1"
                 Margin="0,12,0,0"
                 VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Auto"

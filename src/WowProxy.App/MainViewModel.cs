@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Threading;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -21,6 +22,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly WindowsSystemProxy _systemProxy;
     private readonly StringBuilder _logs = new();
     private readonly object _gate = new();
+    private int _logsUpdateScheduled;
 
     private AppSettings _settings;
     private SingBoxCoreAdapter? _core;
@@ -36,6 +38,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _nodeImportText;
     private readonly ObservableCollection<ProxyNode> _nodes;
     private ProxyNode? _selectedNode;
+    private string _connectButtonText;
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
     {
@@ -55,25 +58,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _selectedNode = !string.IsNullOrWhiteSpace(settings.SelectedNodeId)
             ? _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
             : _nodes.FirstOrDefault();
+        _connectButtonText = "连接";
         _statusText = "未启动";
 
         BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
-        StartCommand = new AsyncRelayCommand(_ => StartAsync());
-        StopCommand = new AsyncRelayCommand(_ => StopAsync());
+        ConnectCommand = new AsyncRelayCommand(_ => ToggleConnectAsync());
         UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
         ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
-        ApplyNodeCommand = new AsyncRelayCommand(_ => ApplyNodeAsync());
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public RelayCommand BrowseSingBoxCommand { get; }
-    public AsyncRelayCommand StartCommand { get; }
-    public AsyncRelayCommand StopCommand { get; }
+    public AsyncRelayCommand ConnectCommand { get; }
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
     public AsyncRelayCommand ImportLinksCommand { get; }
-    public AsyncRelayCommand ApplyNodeCommand { get; }
     public RelayCommand ClearNodesCommand { get; }
 
     public string? SingBoxPath
@@ -229,6 +229,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public string ConnectButtonText
+    {
+        get => _connectButtonText;
+        private set
+        {
+            if (_connectButtonText == value)
+            {
+                return;
+            }
+
+            _connectButtonText = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string LogsText
     {
         get
@@ -278,6 +293,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             StatusText = "请先选择节点";
             return;
+        }
+
+        if (SelectedNode is not null)
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(SelectedNode)));
         }
 
         var secret = EnableClashApi
@@ -330,6 +350,78 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         StatusText = "运行中";
         await RunSelfTestAsync(mixedPort);
+    }
+
+    private static string BuildSelectedNodeSummary(ProxyNode node)
+    {
+        var sb = new StringBuilder();
+        sb.Append("使用节点：")
+            .Append(node.Type)
+            .Append("  ")
+            .Append(node.Name)
+            .Append("  server=")
+            .Append(node.Server)
+            .Append(':')
+            .Append(node.Port);
+
+        var isWs = string.Equals(node.TransportType, "ws", StringComparison.OrdinalIgnoreCase);
+        if (node.TlsEnabled || !string.IsNullOrWhiteSpace(node.TlsServerName) || string.Equals(node.Security, "reality", StringComparison.OrdinalIgnoreCase))
+        {
+            sb.Append("  tls=")
+                .Append(string.Equals(node.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "reality" : "on");
+            if (!string.IsNullOrWhiteSpace(node.TlsServerName))
+            {
+                sb.Append("  sni=").Append(node.TlsServerName);
+            }
+            if (!string.IsNullOrWhiteSpace(node.UtlsFingerprint))
+            {
+                sb.Append("  fp=").Append(node.UtlsFingerprint);
+            }
+            if (!string.IsNullOrWhiteSpace(node.TlsAlpn))
+            {
+                sb.Append("  alpn=").Append(node.TlsAlpn);
+            }
+            else if (isWs)
+            {
+                sb.Append("  alpn=http/1.1(auto)");
+            }
+            if (node.TlsInsecure)
+            {
+                sb.Append("  insecure=true");
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(node.TransportType))
+        {
+            sb.Append("  transport=").Append(node.TransportType);
+        }
+        if (!string.IsNullOrWhiteSpace(node.TransportHost))
+        {
+            sb.Append("  host=").Append(node.TransportHost);
+        }
+        if (!string.IsNullOrWhiteSpace(node.TransportPath))
+        {
+            var path = node.TransportPath;
+            var queryIndex = path.IndexOf('?');
+            if (queryIndex >= 0)
+            {
+                var query = path[(queryIndex + 1)..];
+                foreach (var part in query.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (part.StartsWith("ed=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sb.Append("  ed=").Append(part["ed=".Length..]);
+                        break;
+                    }
+                }
+
+                path = path[..queryIndex];
+            }
+
+            sb.Append("  path=").Append(path);
+        }
+
+        return sb.ToString();
     }
 
     private async Task UpdateSubscriptionAsync()
@@ -522,7 +614,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void UpdateStatus(CoreRuntimeInfo info)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        Application.Current.Dispatcher.BeginInvoke(() =>
         {
             StatusText = info.State switch
             {
@@ -533,26 +625,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 CoreState.Faulted => $"异常：{info.LastError}",
                 _ => info.State.ToString(),
             };
+
+            ConnectButtonText = info.State == CoreState.Running ? "断开" : "连接";
         });
     }
 
     private void AppendLog(CoreLogLine line)
     {
-        Application.Current.Dispatcher.Invoke(() =>
+        lock (_gate)
         {
-            lock (_gate)
+            _logs.Append('[').Append(line.Level).Append("] ").AppendLine(line.Line);
+
+            const int MaxChars = 120_000;
+            if (_logs.Length > MaxChars)
             {
-                _logs.Append('[').Append(line.Level).Append("] ").AppendLine(line.Line);
-
-                const int MaxChars = 200_000;
-                if (_logs.Length > MaxChars)
-                {
-                    _logs.Remove(0, _logs.Length - MaxChars);
-                }
+                _logs.Remove(0, _logs.Length - MaxChars);
             }
+        }
 
-            OnPropertyChanged(nameof(LogsText));
-        });
+        if (Interlocked.Exchange(ref _logsUpdateScheduled, 1) == 0)
+        {
+            Application.Current.Dispatcher.BeginInvoke(() =>
+            {
+                Interlocked.Exchange(ref _logsUpdateScheduled, 0);
+                OnPropertyChanged(nameof(LogsText));
+            });
+        }
     }
 
     private bool TryParsePorts(out int mixedPort, out int clashApiPort, out string error)
@@ -619,6 +717,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, $"自测 HTTP 请求失败：{ex.Message}"));
         }
+    }
+
+    private async Task ToggleConnectAsync()
+    {
+        if (_core is not null && _core.RuntimeInfo.State == CoreState.Running)
+        {
+            await StopAsync();
+            return;
+        }
+
+        await StartAsync();
     }
 }
 
