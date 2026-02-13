@@ -53,6 +53,8 @@
                 <ComboBoxItem Content="debug" />
                 <ComboBoxItem Content="trace" />
             </ComboBox>
+
+            <CheckBox Grid.Column="8" Margin="16,0,0,0" VerticalAlignment="Center" Content="国内直连" IsChecked="{Binding EnableDirectCn}" />
         </Grid>
 
         <Border Grid.Row="2" BorderThickness="1" BorderBrush="#DDD" Padding="8" Margin="0,0,0,12">

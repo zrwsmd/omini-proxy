@@ -49,7 +49,7 @@ var workDir = Path.Combine(Path.GetTempPath(), "WowProxySelfTest", Guid.NewGuid(
 Directory.CreateDirectory(workDir);
 var configPath = Path.Combine(workDir, "config.json");
 
-var configFactory = new SingBoxConfigFactory();
+var configFactory = new SingBoxConfigFactoryV2();
 await configFactory.WriteAsync(settings, configPath);
 
 await using var core = new SingBoxCoreAdapter(singBoxPath);

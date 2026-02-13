@@ -10,7 +10,8 @@ public sealed record AppSettings(
     string? SubscriptionUrl = null,
     List<ProxyNode>? Nodes = null,
     string? SelectedNodeId = null,
-    string LogLevel = "info"
+    string LogLevel = "info",
+    bool EnableDirectCn = true
 )
 {
     public static AppSettings Default =>
@@ -24,6 +25,7 @@ public sealed record AppSettings(
             SubscriptionUrl: null,
             Nodes: null,
             SelectedNodeId: null,
-            LogLevel: "info"
+            LogLevel: "info",
+            EnableDirectCn: true
         );
 }

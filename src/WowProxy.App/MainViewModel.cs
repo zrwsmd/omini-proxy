@@ -40,6 +40,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private ProxyNode? _selectedNode;
     private string _connectButtonText;
     private string _logLevel;
+    private bool _enableDirectCn;
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
     {
@@ -61,6 +62,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             : _nodes.FirstOrDefault();
         _connectButtonText = "连接";
         _logLevel = string.IsNullOrWhiteSpace(settings.LogLevel) ? "info" : settings.LogLevel;
+        _enableDirectCn = settings.EnableDirectCn;
         _statusText = "未启动";
 
         BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
@@ -179,6 +181,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             _logLevel = value;
+            OnPropertyChanged();
+            _ = PersistSelectionAsync();
+        }
+    }
+
+    public bool EnableDirectCn
+    {
+        get => _enableDirectCn;
+        set
+        {
+            if (_enableDirectCn == value)
+            {
+                return;
+            }
+
+            _enableDirectCn = value;
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
@@ -341,7 +359,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             SubscriptionUrl: SubscriptionUrl,
             Nodes: _nodes.ToList(),
             SelectedNodeId: SelectedNode?.Id,
-            LogLevel: LogLevel
+            LogLevel: LogLevel,
+            EnableDirectCn: EnableDirectCn
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -350,7 +369,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         Directory.CreateDirectory(workDir);
         var configPath = Path.Combine(workDir, "config.json");
 
-        var configFactory = new SingBoxConfigFactory();
+        var configFactory = new SingBoxConfigFactoryV2();
         await configFactory.WriteAsync(_settings, configPath);
 
         await StopAsync();
@@ -614,6 +633,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 SelectedNodeId = SelectedNode?.Id,
                 SubscriptionUrl = SubscriptionUrl,
                 LogLevel = LogLevel,
+                EnableDirectCn = EnableDirectCn,
             };
             await _settingsStore.SaveAsync(_settings);
         }
