@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WowProxy.Core.Abstractions\WowProxy.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\WowProxy.Domain\WowProxy.Domain.csproj" />
+    <ProjectReference Include="..\WowProxy.Infrastructure\WowProxy.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

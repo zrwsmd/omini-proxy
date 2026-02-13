@@ -1,0 +1,24 @@
+.vs/
+.idea/
+.vscode/
+.trae/
+tmp/
+
+# Build outputs
+**/bin/
+**/obj/
+dist/
+
+# Local SDK/bootstrap cache (do not commit)
+.dotnet/
+.artifacts/
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.cache
+
+# Logs
+*.log

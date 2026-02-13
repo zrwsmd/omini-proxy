@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WowProxy.Core.Abstractions\WowProxy.Core.Abstractions.csproj" />
+    <ProjectReference Include="..\WowProxy.Core.SingBox\WowProxy.Core.SingBox.csproj" />
+    <ProjectReference Include="..\WowProxy.Domain\WowProxy.Domain.csproj" />
+    <ProjectReference Include="..\WowProxy.Infrastructure\WowProxy.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
