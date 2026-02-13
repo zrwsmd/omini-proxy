@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using WowProxy.Core.Abstractions;
@@ -16,6 +17,8 @@ public sealed class SingBoxConfigFactory
 
     public string Build(AppSettings settings)
     {
+        var selected = ResolveSelectedNode(settings);
+
         var root = new Dictionary<string, object?>
         {
             ["log"] = new
@@ -33,14 +36,26 @@ public sealed class SingBoxConfigFactory
                     listen_port = settings.MixedPort,
                 },
             },
-            ["outbounds"] = new object[]
+        };
+
+        var outbounds = new List<object>
+        {
+            new
             {
-                new
-                {
-                    type = "direct",
-                    tag = "direct",
-                },
+                type = "direct",
+                tag = "direct",
             },
+        };
+
+        if (selected is not null)
+        {
+            outbounds.Insert(0, BuildProxyOutbound(selected));
+        }
+
+        root["outbounds"] = outbounds.ToArray();
+        root["route"] = new
+        {
+            final = selected is not null ? "proxy" : "direct",
         };
 
         if (settings.EnableClashApi)
@@ -56,6 +71,113 @@ public sealed class SingBoxConfigFactory
         }
 
         return JsonSerializer.Serialize(root, JsonOptions);
+    }
+
+    private static ProxyNode? ResolveSelectedNode(AppSettings settings)
+    {
+        var nodes = settings.Nodes;
+        if (nodes is null || nodes.Count == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(settings.SelectedNodeId))
+        {
+            return nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
+                ?? nodes.FirstOrDefault();
+        }
+
+        return nodes.FirstOrDefault();
+    }
+
+    private static object BuildProxyOutbound(ProxyNode node)
+    {
+        var baseOutbound = new Dictionary<string, object?>
+        {
+            ["tag"] = "proxy",
+            ["server"] = node.Server,
+            ["server_port"] = node.Port,
+        };
+
+        switch (node.Type)
+        {
+            case ProxyNodeType.Vless:
+                baseOutbound["type"] = "vless";
+                baseOutbound["uuid"] = node.Uuid ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(node.Flow))
+                {
+                    baseOutbound["flow"] = node.Flow;
+                }
+
+                ApplyTlsAndTransport(baseOutbound, node);
+                return baseOutbound;
+
+            case ProxyNodeType.Trojan:
+                baseOutbound["type"] = "trojan";
+                baseOutbound["password"] = node.Password ?? string.Empty;
+                ApplyTlsAndTransport(baseOutbound, node);
+                return baseOutbound;
+
+            case ProxyNodeType.Vmess:
+                baseOutbound["type"] = "vmess";
+                baseOutbound["uuid"] = node.Uuid ?? string.Empty;
+                baseOutbound["security"] = string.IsNullOrWhiteSpace(node.Security) ? "auto" : node.Security;
+                if (node.AlterId is not null)
+                {
+                    baseOutbound["alter_id"] = node.AlterId.Value;
+                }
+
+                ApplyTlsAndTransport(baseOutbound, node);
+                return baseOutbound;
+
+            case ProxyNodeType.Shadowsocks:
+                baseOutbound["type"] = "shadowsocks";
+                baseOutbound["method"] = node.Method ?? "aes-128-gcm";
+                baseOutbound["password"] = node.Password ?? string.Empty;
+                return baseOutbound;
+
+            default:
+                baseOutbound["type"] = "direct";
+                baseOutbound["tag"] = "direct";
+                return baseOutbound;
+        }
+    }
+
+    private static void ApplyTlsAndTransport(Dictionary<string, object?> outbound, ProxyNode node)
+    {
+        if (node.TlsEnabled || !string.IsNullOrWhiteSpace(node.TlsServerName))
+        {
+            outbound["tls"] = new
+            {
+                enabled = true,
+                server_name = node.TlsServerName ?? string.Empty,
+                insecure = false,
+            };
+        }
+
+        if (string.Equals(node.TransportType, "ws", StringComparison.OrdinalIgnoreCase))
+        {
+            var headers = new Dictionary<string, string>();
+            if (!string.IsNullOrWhiteSpace(node.TransportHost))
+            {
+                headers["Host"] = node.TransportHost;
+            }
+
+            outbound["transport"] = new
+            {
+                type = "ws",
+                path = string.IsNullOrWhiteSpace(node.TransportPath) ? "/" : node.TransportPath,
+                headers = headers.Count == 0 ? null : headers,
+            };
+        }
+        else if (string.Equals(node.TransportType, "grpc", StringComparison.OrdinalIgnoreCase))
+        {
+            outbound["transport"] = new
+            {
+                type = "grpc",
+                service_name = string.IsNullOrWhiteSpace(node.TransportPath) ? "TunService" : node.TransportPath,
+            };
+        }
     }
 
     public async Task WriteAsync(AppSettings settings, string configPath, CancellationToken cancellationToken = default)

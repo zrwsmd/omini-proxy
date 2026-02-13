@@ -1,4 +1,7 @@
+using System.Linq;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
@@ -29,6 +32,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string? _clashApiSecret;
     private bool _enableSystemProxy;
     private string _statusText;
+    private string? _subscriptionUrl;
+    private string _nodeImportText;
+    private readonly ObservableCollection<ProxyNode> _nodes;
+    private ProxyNode? _selectedNode;
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
     {
@@ -42,11 +49,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _clashApiPortText = settings.ClashApiPort.ToString();
         _clashApiSecret = settings.ClashApiSecret;
         _enableSystemProxy = settings.EnableSystemProxy;
+        _subscriptionUrl = settings.SubscriptionUrl;
+        _nodeImportText = string.Empty;
+        _nodes = new ObservableCollection<ProxyNode>((settings.Nodes ?? new List<ProxyNode>()));
+        _selectedNode = !string.IsNullOrWhiteSpace(settings.SelectedNodeId)
+            ? _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
+            : _nodes.FirstOrDefault();
         _statusText = "未启动";
 
         BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
         StartCommand = new AsyncRelayCommand(_ => StartAsync());
         StopCommand = new AsyncRelayCommand(_ => StopAsync());
+        UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
+        ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
+        ApplyNodeCommand = new AsyncRelayCommand(_ => ApplyNodeAsync());
+        ClearNodesCommand = new RelayCommand(_ => ClearNodes());
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -54,6 +71,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public RelayCommand BrowseSingBoxCommand { get; }
     public AsyncRelayCommand StartCommand { get; }
     public AsyncRelayCommand StopCommand { get; }
+    public AsyncRelayCommand UpdateSubscriptionCommand { get; }
+    public AsyncRelayCommand ImportLinksCommand { get; }
+    public AsyncRelayCommand ApplyNodeCommand { get; }
+    public RelayCommand ClearNodesCommand { get; }
 
     public string? SingBoxPath
     {
@@ -145,6 +166,54 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public string? SubscriptionUrl
+    {
+        get => _subscriptionUrl;
+        set
+        {
+            if (_subscriptionUrl == value)
+            {
+                return;
+            }
+
+            _subscriptionUrl = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public string NodeImportText
+    {
+        get => _nodeImportText;
+        set
+        {
+            if (_nodeImportText == value)
+            {
+                return;
+            }
+
+            _nodeImportText = value;
+            OnPropertyChanged();
+        }
+    }
+
+    public ObservableCollection<ProxyNode> Nodes => _nodes;
+
+    public ProxyNode? SelectedNode
+    {
+        get => _selectedNode;
+        set
+        {
+            if (ReferenceEquals(_selectedNode, value) || (_selectedNode is not null && value is not null && _selectedNode.Id == value.Id))
+            {
+                return;
+            }
+
+            _selectedNode = value;
+            OnPropertyChanged();
+            _ = PersistSelectionAsync();
+        }
+    }
+
     public string StatusText
     {
         get => _statusText;
@@ -205,6 +274,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
+        if (_nodes.Count > 0 && SelectedNode is null)
+        {
+            StatusText = "请先选择节点";
+            return;
+        }
+
         var secret = EnableClashApi
             ? string.IsNullOrWhiteSpace(ClashApiSecret) ? Guid.NewGuid().ToString("N") : ClashApiSecret!.Trim()
             : null;
@@ -217,7 +292,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             EnableClashApi: EnableClashApi,
             ClashApiPort: clashApiPort,
             ClashApiSecret: secret,
-            EnableSystemProxy: EnableSystemProxy
+            EnableSystemProxy: EnableSystemProxy,
+            SubscriptionUrl: SubscriptionUrl,
+            Nodes: _nodes.ToList(),
+            SelectedNodeId: SelectedNode?.Id
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -252,6 +330,177 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         StatusText = "运行中";
         await RunSelfTestAsync(mixedPort);
+    }
+
+    private async Task UpdateSubscriptionAsync()
+    {
+        var url = SubscriptionUrl?.Trim();
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            StatusText = "请先填写订阅 URL";
+            return;
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            StatusText = "订阅 URL 无效";
+            return;
+        }
+
+        StatusText = "更新订阅中...";
+        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"更新订阅：{SanitizeUrlForLog(url)}"));
+
+        var (nodes, errors) = await NodeImport.LoadFromSubscriptionAsync(url, CancellationToken.None);
+
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            _nodes.Clear();
+            foreach (var n in nodes)
+            {
+                _nodes.Add(n);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_settings.SelectedNodeId))
+            {
+                SelectedNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, _settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
+                    ?? _nodes.FirstOrDefault();
+            }
+            else
+            {
+                SelectedNode = _nodes.FirstOrDefault();
+            }
+        });
+
+        _settings = _settings with
+        {
+            SubscriptionUrl = url,
+            Nodes = nodes,
+            SelectedNodeId = SelectedNode?.Id,
+        };
+
+        await _settingsStore.SaveAsync(_settings);
+
+        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"订阅更新完成：{nodes.Count} 个节点"));
+        foreach (var e in errors.Take(10))
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, e));
+        }
+
+        StatusText = nodes.Count == 0 ? "订阅为空或解析失败" : "订阅已更新";
+    }
+
+    private static string SanitizeUrlForLog(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return url;
+        }
+
+        var safe = new UriBuilder(uri)
+        {
+            UserName = string.Empty,
+            Password = string.Empty,
+            Query = string.Empty,
+            Fragment = string.Empty,
+        }.Uri;
+
+        return safe.ToString();
+    }
+
+    private async Task ImportLinksAsync()
+    {
+        var text = NodeImportText;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            StatusText = "请粘贴节点链接";
+            return;
+        }
+
+        var (nodes, errors) = NodeImport.ParseText(text);
+
+        var merged = _nodes.ToList();
+        foreach (var node in nodes)
+        {
+            if (merged.Any(x => string.Equals(x.Id, node.Id, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            merged.Add(node);
+        }
+
+        merged = merged
+            .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            _nodes.Clear();
+            foreach (var n in merged)
+            {
+                _nodes.Add(n);
+            }
+
+            SelectedNode ??= _nodes.FirstOrDefault();
+            NodeImportText = string.Empty;
+        });
+
+        _settings = _settings with
+        {
+            Nodes = merged,
+            SelectedNodeId = SelectedNode?.Id,
+        };
+
+        await _settingsStore.SaveAsync(_settings);
+
+        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"已导入：{nodes.Count}，节点总数：{merged.Count}"));
+        foreach (var e in errors.Take(10))
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, e));
+        }
+
+        StatusText = "已导入节点";
+    }
+
+    private async Task ApplyNodeAsync()
+    {
+        if (SelectedNode is null)
+        {
+            StatusText = "请先选择节点";
+            return;
+        }
+
+        await StartAsync();
+    }
+
+    private void ClearNodes()
+    {
+        _nodes.Clear();
+        SelectedNode = null;
+        _settings = _settings with
+        {
+            Nodes = new List<ProxyNode>(),
+            SelectedNodeId = null,
+        };
+        _ = _settingsStore.SaveAsync(_settings);
+        StatusText = "节点已清空";
+    }
+
+    private async Task PersistSelectionAsync()
+    {
+        try
+        {
+            _settings = _settings with
+            {
+                Nodes = _nodes.ToList(),
+                SelectedNodeId = SelectedNode?.Id,
+                SubscriptionUrl = SubscriptionUrl,
+            };
+            await _settingsStore.SaveAsync(_settings);
+        }
+        catch
+        {
+        }
     }
 
     private async Task StopAsync()

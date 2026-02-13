@@ -6,7 +6,10 @@ public sealed record AppSettings(
     bool EnableClashApi,
     int ClashApiPort,
     string? ClashApiSecret,
-    bool EnableSystemProxy
+    bool EnableSystemProxy,
+    string? SubscriptionUrl = null,
+    List<ProxyNode>? Nodes = null,
+    string? SelectedNodeId = null
 )
 {
     public static AppSettings Default =>
@@ -16,6 +19,9 @@ public sealed record AppSettings(
             EnableClashApi: false,
             ClashApiPort: 9090,
             ClashApiSecret: null,
-            EnableSystemProxy: false
+            EnableSystemProxy: false,
+            SubscriptionUrl: null,
+            Nodes: null,
+            SelectedNodeId: null
         );
 }
