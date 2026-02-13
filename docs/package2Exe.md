@@ -85,6 +85,15 @@ Test-Path .\dist\WowProxy-next3\WowProxy.App.exe
 - `/p:IncludeNativeLibrariesForSelfExtract=true`：包含本地依赖库并按需自解压
 - `/p:PublishTrimmed=false`：关闭裁剪，减少 WPF/反射相关风险
 
+## TUN 模式前置条件（如果你要用到）
+
+如果在 WowProxy 中开启了 “TUN 模式”，通常还需要满足下面条件（否则可能启动失败或无法接管流量）：
+
+- 使用支持 TUN 的 `sing-box.exe` 版本
+- `wintun.dll` 一般需要与 `sing-box.exe` 放在同一目录（取决于 sing-box 的发布包）
+- Windows 上配置路由/虚拟网卡通常需要管理员权限，建议“以管理员身份运行 WowProxy”
+- sing-box 1.12+ 使用新的 TUN 字段（address 等）；旧的 inet4_address/inet6_address 已被移除
+
 ## 常见问题
 
 ### 1）PowerShell 里不要用 `&&`
@@ -104,4 +113,3 @@ git status -sb; git log -1 --oneline --decorate
 ### 3）想“重打包但不覆盖旧目录”
 
 直接用“方式二”，把输出目录改成新的 `dist\WowProxy-xxx\` 即可；旧目录不会被影响。
-

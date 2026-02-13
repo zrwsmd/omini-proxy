@@ -1,5 +1,10 @@
 namespace WowProxy.Domain;
 
+public static class AppRuntime
+{
+    public static string? TunInterfaceName { get; set; }
+}
+
 public sealed record AppSettings(
     string? SingBoxPath,
     int MixedPort,
@@ -11,7 +16,9 @@ public sealed record AppSettings(
     List<ProxyNode>? Nodes = null,
     string? SelectedNodeId = null,
     string LogLevel = "info",
-    bool EnableDirectCn = true
+    bool EnableDirectCn = true,
+    bool EnableTun = false,
+    string? TunInterfaceName = null
 )
 {
     public static AppSettings Default =>
@@ -26,6 +33,8 @@ public sealed record AppSettings(
             Nodes: null,
             SelectedNodeId: null,
             LogLevel: "info",
-            EnableDirectCn: true
+            EnableDirectCn: true,
+            EnableTun: false,
+            TunInterfaceName: null
         );
 }

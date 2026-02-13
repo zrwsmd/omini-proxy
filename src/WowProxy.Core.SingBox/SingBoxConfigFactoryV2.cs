@@ -25,18 +25,7 @@ public sealed class SingBoxConfigFactoryV2
                 level = logLevel,
                 timestamp = true,
             },
-            ["inbounds"] = new object[]
-            {
-                new
-                {
-                    type = "mixed",
-                    tag = "mixed-in",
-                    listen = "127.0.0.1",
-                    listen_port = settings.MixedPort,
-                    sniff = true,
-                    sniff_override_destination = true,
-                },
-            },
+            ["inbounds"] = BuildInbounds(settings, selected),
         };
 
         var outbounds = new List<object>
@@ -55,6 +44,11 @@ public sealed class SingBoxConfigFactoryV2
 
         root["outbounds"] = outbounds.ToArray();
         root["route"] = BuildRoute(settings, hasProxy);
+
+        if (settings.EnableTun && hasProxy)
+        {
+            root["dns"] = BuildTunDns();
+        }
 
         var experimental = new Dictionary<string, object?>();
         if (settings.EnableClashApi)
@@ -90,24 +84,52 @@ public sealed class SingBoxConfigFactoryV2
     {
         if (!hasProxy)
         {
-            return new { final = "direct" };
+            var route = new Dictionary<string, object?>
+            {
+                ["final"] = "direct",
+            };
+
+            if (settings.EnableTun)
+            {
+                route["auto_detect_interface"] = true;
+            }
+
+            return route;
         }
 
         if (!settings.EnableDirectCn)
         {
-            return new { final = "proxy" };
+            var route = new Dictionary<string, object?>
+            {
+                ["final"] = "proxy",
+            };
+
+            if (settings.EnableTun)
+            {
+                route["auto_detect_interface"] = true;
+                route["default_domain_resolver"] = new { server = "dns-remote" };
+
+                // 强制劫持 DNS 流量
+                route["rules"] = new object[]
+                {
+                    new { protocol = "dns", action = "hijack-dns" },
+                    new { port = 53, action = "hijack-dns" }
+                };
+            }
+
+            return route;
         }
 
-        return new
+        var cnRoute = new Dictionary<string, object?>
         {
-            rules = new object[]
+            ["rules"] = new object[]
             {
                 new { ip_is_private = true, outbound = "direct" },
                 new { domain_suffix = new[] { ".cn" }, outbound = "direct" },
                 new { rule_set = "geosite-cn", outbound = "direct" },
                 new { rule_set = "geoip-cn", outbound = "direct" },
             },
-            rule_set = new object[]
+            ["rule_set"] = new object[]
             {
                 new
                 {
@@ -126,7 +148,64 @@ public sealed class SingBoxConfigFactoryV2
                     download_detour = "proxy",
                 },
             },
-            final = "proxy",
+            ["final"] = "proxy",
+        };
+
+        if (settings.EnableTun)
+        {
+            cnRoute["auto_detect_interface"] = true;
+            cnRoute["default_domain_resolver"] = new { server = "dns-remote" };
+
+            // 强制劫持 DNS 流量，防止系统 DNS 设置为 127.0.0.1 时的回环拒绝问题
+            var rules = (object[])cnRoute["rules"]!;
+            var newRules = new List<object>
+            {
+                new { protocol = "dns", action = "hijack-dns" },
+                new { port = 53, action = "hijack-dns" }
+            };
+            newRules.AddRange(rules);
+            cnRoute["rules"] = newRules.ToArray();
+        }
+
+        return cnRoute;
+    }
+
+    private static object BuildTunDns()
+    {
+        return new
+        {
+            servers = new object[]
+            {
+                new
+                {
+                    type = "https",
+                    tag = "dns-remote",
+                    server = "1.1.1.1",
+                    path = "/dns-query",
+                    detour = "proxy",
+                },
+                new
+                {
+                    type = "udp",
+                    tag = "dns-direct",
+                    server = "223.5.5.5",
+                    server_port = 53,
+                },
+                new
+                {
+                    type = "udp",
+                    tag = "dns-local",
+                    server = "223.5.5.5",
+                    server_port = 53,
+                },
+            },
+            rules = new object[]
+            {
+                new { rule_set = "geosite-cn", server = "dns-direct" },
+                new { rule_set = "geoip-cn", server = "dns-direct" },
+            },
+            final = "dns-remote",
+            strategy = "prefer_ipv4",
         };
     }
 
@@ -375,5 +454,79 @@ public sealed class SingBoxConfigFactoryV2
             .ToArray();
 
         return parts.Length == 0 ? null : parts;
+    }
+
+    private static object[] BuildInbounds(AppSettings settings, ProxyNode? selected)
+    {
+        var list = new List<object>
+        {
+            new
+            {
+                type = "mixed",
+                tag = "mixed-in",
+                listen = "127.0.0.1",
+                listen_port = settings.MixedPort,
+                sniff = true,
+                sniff_override_destination = true,
+            },
+        };
+
+        if (settings.EnableTun)
+        {
+            var interfaceName = string.IsNullOrWhiteSpace(settings.TunInterfaceName)
+                ? string.Empty
+                : settings.TunInterfaceName!.Trim();
+
+            list.Add(new
+            {
+                type = "tun",
+                tag = "tun-in",
+                interface_name = interfaceName,
+                address = new[] { "172.19.0.1/30" },
+                mtu = 9000,
+                auto_route = true,
+                strict_route = true,
+                route_exclude_address = BuildTunRouteExcludeAddress(selected),
+                stack = "mixed",
+                sniff = true,
+                sniff_override_destination = true,
+            });
+        }
+
+        return list.ToArray();
+    }
+
+    private static string[] BuildTunRouteExcludeAddress(ProxyNode? selected)
+    {
+        var list = new List<string>
+        {
+            "0.0.0.0/8",
+            "10.0.0.0/8",
+            "100.64.0.0/10",
+            "127.0.0.0/8",
+            "169.254.0.0/16",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "224.0.0.0/4",
+            "240.0.0.0/4",
+        };
+
+        if (selected is not null && !string.IsNullOrWhiteSpace(selected.Server))
+        {
+            var host = selected.Server.Trim();
+            if (System.Net.IPAddress.TryParse(host, out var ip))
+            {
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                {
+                    list.Add($"{ip}/32");
+                }
+                else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                {
+                    list.Add($"{ip}/128");
+                }
+            }
+        }
+
+        return list.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 }

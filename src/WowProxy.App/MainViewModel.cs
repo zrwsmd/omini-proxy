@@ -7,6 +7,7 @@ using System.Threading;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.Json;
 using System.Windows;
 using Microsoft.Win32;
 using WowProxy.Core.Abstractions;
@@ -41,6 +42,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _connectButtonText;
     private string _logLevel;
     private bool _enableDirectCn;
+    private bool _enableTun;
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
     {
@@ -63,7 +65,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _connectButtonText = "连接";
         _logLevel = string.IsNullOrWhiteSpace(settings.LogLevel) ? "info" : settings.LogLevel;
         _enableDirectCn = settings.EnableDirectCn;
+        _enableTun = settings.EnableTun;
         _statusText = "未启动";
+
+        if (_enableTun)
+        {
+            _enableSystemProxy = false;
+        }
 
         BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
         ConnectCommand = new AsyncRelayCommand(_ => ToggleConnectAsync());
@@ -160,6 +168,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _enableSystemProxy;
         set
         {
+            if (_enableTun && value)
+            {
+                if (_enableSystemProxy)
+                {
+                    _enableSystemProxy = false;
+                    OnPropertyChanged();
+                    _ = PersistSelectionAsync();
+                }
+                return;
+            }
+
             if (_enableSystemProxy == value)
             {
                 return;
@@ -167,6 +186,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             _enableSystemProxy = value;
             OnPropertyChanged();
+            _ = PersistSelectionAsync();
         }
     }
 
@@ -197,6 +217,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             _enableDirectCn = value;
+            OnPropertyChanged();
+            _ = PersistSelectionAsync();
+        }
+    }
+
+    public bool EnableTun
+    {
+        get => _enableTun;
+        set
+        {
+            if (_enableTun == value)
+            {
+                return;
+            }
+
+            _enableTun = value;
+            if (_enableTun && _enableSystemProxy)
+            {
+                _enableSystemProxy = false;
+                OnPropertyChanged(nameof(EnableSystemProxy));
+            }
+
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
@@ -313,6 +355,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task StartAsync()
     {
+        if (EnableTun && !IsRunningAsAdmin())
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, "TUN 模式需要管理员权限（请右键以管理员身份运行）。"));
+            StatusText = "请以管理员身份运行";
+            return;
+        }
+
         if (!TryParsePorts(out var mixedPort, out var clashApiPort, out var error))
         {
             StatusText = error;
@@ -349,18 +398,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         ClashApiSecret = secret;
 
+        var enableSystemProxy = !EnableTun && EnableSystemProxy;
+
         _settings = new AppSettings(
             SingBoxPath: SingBoxPath,
             MixedPort: mixedPort,
             EnableClashApi: EnableClashApi,
             ClashApiPort: clashApiPort,
             ClashApiSecret: secret,
-            EnableSystemProxy: EnableSystemProxy,
+            EnableSystemProxy: enableSystemProxy,
             SubscriptionUrl: SubscriptionUrl,
             Nodes: _nodes.ToList(),
             SelectedNodeId: SelectedNode?.Id,
             LogLevel: LogLevel,
-            EnableDirectCn: EnableDirectCn
+            EnableDirectCn: EnableDirectCn,
+            EnableTun: EnableTun
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -370,31 +422,137 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         var configPath = Path.Combine(workDir, "config.json");
 
         var configFactory = new SingBoxConfigFactoryV2();
-        await configFactory.WriteAsync(_settings, configPath);
-
         await StopAsync();
 
-        _core = new SingBoxCoreAdapter(_settings.SingBoxPath!);
-        _core.LogReceived += (_, line) => AppendLog(line);
-        _core.RuntimeInfoChanged += (_, info) => UpdateStatus(info);
-
-        var check = await _core.CheckConfigAsync(configPath, workDir);
-        if (!check.IsOk)
+        var maxAttempts = EnableTun ? 3 : 1;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, check.Stderr.Trim()));
-            StatusText = "配置检查失败";
+            var tunInitIssue = false;
+
+            var runtimeSettings = EnableTun
+                ? _settings with { TunInterfaceName = BuildTunInterfaceName(attempt) }
+                : _settings with { TunInterfaceName = null };
+
+            // 确保每次重试都用新的 interface_name 重新生成 config.json
+            WowProxy.Domain.AppRuntime.TunInterfaceName = runtimeSettings.TunInterfaceName;
+            await configFactory.WriteAsync(runtimeSettings, configPath);
+            TryAppendTunSummary(configPath);
+
+            _core = new SingBoxCoreAdapter(_settings.SingBoxPath!);
+            _core.LogReceived += (_, line) =>
+            {
+                if (EnableTun)
+                {
+                    var text = line.Line;
+                    if (text.Contains("open tun interface take too much time", StringComparison.OrdinalIgnoreCase)
+                        || text.Contains("Cannot create a file when that file already exists", StringComparison.OrdinalIgnoreCase))
+                    {
+                        tunInitIssue = true;
+                    }
+                }
+
+                AppendLog(line);
+            };
+            _core.RuntimeInfoChanged += (_, info) => UpdateStatus(info);
+
+            var check = await _core.CheckConfigAsync(configPath, workDir);
+            if (!check.IsOk)
+            {
+                AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, check.Stderr.Trim()));
+                StatusText = "配置检查失败";
+                return;
+            }
+
+            await _core.StartAsync(new CoreStartOptions(workDir, configPath));
+            await Task.Delay(2500);
+
+            if (_core.RuntimeInfo.State == CoreState.Running)
+            {
+                if (enableSystemProxy)
+                {
+                    _systemProxy.EnableGlobalProxy($"127.0.0.1:{mixedPort}");
+                }
+
+                StatusText = "运行中";
+                await RunSelfTestAsync(mixedPort);
+                return;
+            }
+
+            if (!EnableTun || !tunInitIssue || attempt == maxAttempts - 1)
+            {
+                StatusText = "启动失败";
+                return;
+            }
+
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, "TUN 初始化可能被系统阻塞，自动重试..."));
+            await StopAsync();
+            await Task.Delay(1200);
+        }
+    }
+
+    private static bool IsRunningAsAdmin()
+    {
+        try
+        {
+            var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            var principal = new System.Security.Principal.WindowsPrincipal(identity);
+            return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string? BuildTunInterfaceName(int attempt)
+    {
+        // 强制每次都用随机名，彻底规避 already exists
+        return "wowproxy-tun-" + Guid.NewGuid().ToString("N").Substring(0, 6);
+    }
+
+    private void TryAppendTunSummary(string configPath)
+    {
+        if (!EnableTun)
+        {
             return;
         }
 
-        await _core.StartAsync(new CoreStartOptions(workDir, configPath));
-
-        if (EnableSystemProxy)
+        try
         {
-            _systemProxy.EnableGlobalProxy($"127.0.0.1:{mixedPort}");
-        }
+            using var stream = File.OpenRead(configPath);
+            using var doc = JsonDocument.Parse(stream);
+            if (!doc.RootElement.TryGetProperty("inbounds", out var inbounds) || inbounds.ValueKind != JsonValueKind.Array)
+            {
+                return;
+            }
 
-        StatusText = "运行中";
-        await RunSelfTestAsync(mixedPort);
+            foreach (var inbound in inbounds.EnumerateArray())
+            {
+                if (!inbound.TryGetProperty("type", out var typeEl) || typeEl.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(typeEl.GetString(), "tun", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var iface = inbound.TryGetProperty("interface_name", out var ifaceEl) && ifaceEl.ValueKind == JsonValueKind.String
+                    ? ifaceEl.GetString()
+                    : null;
+
+                var addr = inbound.TryGetProperty("address", out var addrEl) && addrEl.ValueKind == JsonValueKind.Array
+                    ? string.Join(", ", addrEl.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.String).Select(a => a.GetString()).Where(s => !string.IsNullOrWhiteSpace(s)))
+                    : string.Empty;
+
+                AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"TUN 配置：interface_name={iface ?? "(auto)"} address=[{addr}] auto_route=true"));
+                return;
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static string BuildSelectedNodeSummary(ProxyNode node)
@@ -634,6 +792,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 SubscriptionUrl = SubscriptionUrl,
                 LogLevel = LogLevel,
                 EnableDirectCn = EnableDirectCn,
+                EnableTun = EnableTun,
+                EnableSystemProxy = EnableSystemProxy,
             };
             await _settingsStore.SaveAsync(_settings);
         }
