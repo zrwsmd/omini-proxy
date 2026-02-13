@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using Microsoft.Win32;
+using WowProxy.App.Models;
 using WowProxy.Core.Abstractions;
 using WowProxy.Core.SingBox;
 using WowProxy.Domain;
@@ -37,8 +38,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string _statusText;
     private string? _subscriptionUrl;
     private string _nodeImportText;
-    private readonly ObservableCollection<ProxyNode> _nodes;
-    private ProxyNode? _selectedNode;
+    private readonly ObservableCollection<ProxyNodeModel> _nodes;
+    private ProxyNodeModel? _selectedNode;
     private string _connectButtonText;
     private string _logLevel;
     private bool _enableDirectCn;
@@ -58,7 +59,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _enableSystemProxy = settings.EnableSystemProxy;
         _subscriptionUrl = settings.SubscriptionUrl;
         _nodeImportText = string.Empty;
-        _nodes = new ObservableCollection<ProxyNode>((settings.Nodes ?? new List<ProxyNode>()));
+        _nodes = new ObservableCollection<ProxyNodeModel>((settings.Nodes ?? new List<ProxyNode>())
+            .Select(n => new ProxyNodeModel(n)));
         _selectedNode = !string.IsNullOrWhiteSpace(settings.SelectedNodeId)
             ? _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
             : _nodes.FirstOrDefault();
@@ -78,6 +80,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
         ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
+        TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
+        TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -87,6 +91,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
     public AsyncRelayCommand ImportLinksCommand { get; }
     public RelayCommand ClearNodesCommand { get; }
+    public AsyncRelayCommand TestLatencyCommand { get; }
+    public AsyncRelayCommand TestSpeedCommand { get; }
 
     public string? SingBoxPath
     {
@@ -168,23 +174,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _enableSystemProxy;
         set
         {
-            if (_enableTun && value)
-            {
-                if (_enableSystemProxy)
-                {
-                    _enableSystemProxy = false;
-                    OnPropertyChanged();
-                    _ = PersistSelectionAsync();
-                }
-                return;
-            }
-
             if (_enableSystemProxy == value)
             {
                 return;
             }
 
             _enableSystemProxy = value;
+
+            // 如果启用了系统代理，且当前是 TUN 模式，则自动关闭 TUN 模式
+            if (_enableSystemProxy && _enableTun)
+            {
+                _enableTun = false;
+                OnPropertyChanged(nameof(EnableTun));
+            }
+
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
@@ -233,6 +236,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             _enableTun = value;
+
+            // 如果启用了 TUN 模式，强制关闭系统代理
             if (_enableTun && _enableSystemProxy)
             {
                 _enableSystemProxy = false;
@@ -274,9 +279,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public ObservableCollection<ProxyNode> Nodes => _nodes;
+    public ObservableCollection<ProxyNodeModel> Nodes => _nodes;
 
-    public ProxyNode? SelectedNode
+    public ProxyNodeModel? SelectedNode
     {
         get => _selectedNode;
         set
@@ -389,7 +394,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         if (SelectedNode is not null)
         {
-            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(SelectedNode)));
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(SelectedNode.Node)));
         }
 
         var secret = EnableClashApi
@@ -408,7 +413,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ClashApiSecret: secret,
             EnableSystemProxy: enableSystemProxy,
             SubscriptionUrl: SubscriptionUrl,
-            Nodes: _nodes.ToList(),
+            Nodes: _nodes.Select(n => n.Node).ToList(),
             SelectedNodeId: SelectedNode?.Id,
             LogLevel: LogLevel,
             EnableDirectCn: EnableDirectCn,
@@ -652,7 +657,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _nodes.Clear();
             foreach (var n in nodes)
             {
-                _nodes.Add(n);
+                _nodes.Add(new ProxyNodeModel(n));
             }
 
             if (!string.IsNullOrWhiteSpace(_settings.SelectedNodeId))
@@ -713,7 +718,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         var (nodes, errors) = NodeImport.ParseText(text);
 
-        var merged = _nodes.ToList();
+        var merged = _nodes.Select(m => m.Node).ToList();
         foreach (var node in nodes)
         {
             if (merged.Any(x => string.Equals(x.Id, node.Id, StringComparison.OrdinalIgnoreCase)))
@@ -733,7 +738,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _nodes.Clear();
             foreach (var n in merged)
             {
-                _nodes.Add(n);
+                _nodes.Add(new ProxyNodeModel(n));
             }
 
             SelectedNode ??= _nodes.FirstOrDefault();
@@ -787,7 +792,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             _settings = _settings with
             {
-                Nodes = _nodes.ToList(),
+                Nodes = _nodes.Select(n => n.Node).ToList(),
                 SelectedNodeId = SelectedNode?.Id,
                 SubscriptionUrl = SubscriptionUrl,
                 LogLevel = LogLevel,
@@ -800,6 +805,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch
         {
         }
+    }
+
+    private async Task TestLatencyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SingBoxPath))
+        {
+            StatusText = "请先设置 sing-box 路径";
+            return;
+        }
+
+        if (_nodes.Count == 0) return;
+
+        StatusText = "正在测试延迟...";
+        await NodeTester.TestLatencyAsync(_nodes, SingBoxPath);
+        StatusText = "延迟测试完成";
+    }
+
+    private async Task TestSpeedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SingBoxPath))
+        {
+            StatusText = "请先设置 sing-box 路径";
+            return;
+        }
+
+        if (_nodes.Count == 0) return;
+
+        StatusText = "正在测试速度...";
+        await NodeTester.TestSpeedAsync(_nodes, SingBoxPath);
+        StatusText = "速度测试完成";
     }
 
     private static bool IsLocalPortAvailable(int port)

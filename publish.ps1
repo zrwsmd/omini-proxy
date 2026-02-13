@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $dotnet = Join-Path $PSScriptRoot ".dotnet\\dotnet.exe"
 $project = Join-Path $PSScriptRoot "src\\WowProxy.App\\WowProxy.App.csproj"
-$outDir = Join-Path $PSScriptRoot "dist\\WowProxy"
+$outDir = Join-Path $PSScriptRoot "dist\WowProxy-v3"
 
 New-Item -ItemType Directory -Force $outDir | Out-Null
 

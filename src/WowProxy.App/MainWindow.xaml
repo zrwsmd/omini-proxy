@@ -108,6 +108,12 @@
                         GridLinesVisibility="Horizontal"
                         BorderThickness="1"
                         BorderBrush="#ABADB3">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
+                                <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Resources>
                             <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2E8B57"/>
                             <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
@@ -120,14 +126,16 @@
                             <DataGridTextColumn Header="地址" Binding="{Binding Server}" Width="140"/>
                             <DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="60"/>
                             <DataGridTextColumn Header="传输" Binding="{Binding TransportType}" Width="60"/>
-                            <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled}" Width="40"/>
+                            <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled, Mode=OneWay}" Width="40"/>
+                            <DataGridTextColumn Header="延迟 (ms)" Binding="{Binding Latency}" Width="80"/>
+                            <DataGridTextColumn Header="速度 (MB/s)" Binding="{Binding Speed}" Width="90"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     <StackPanel Grid.Column="1" Margin="8,0,0,0">
                         <Button Padding="12,6" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" />
                         <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="TUN 模式" IsChecked="{Binding EnableTun}" />
-                    <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
-                    <TextBlock Margin="0,8,0,0" Text="{Binding StatusText}" />
+                        <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
+                        <TextBlock Margin="0,8,0,0" Text="{Binding StatusText}" />
                         <Button Margin="0,8,0,0" Padding="12,6" Content="清空" Command="{Binding ClearNodesCommand}" />
                     </StackPanel>
                 </Grid>

@@ -49,7 +49,7 @@ public sealed class SingBoxConfigFactory
 
         if (selected is not null)
         {
-            outbounds.Insert(0, BuildProxyOutbound(selected));
+            outbounds.Insert(0, BuildProxyOutbound(selected, "proxy"));
         }
 
         root["outbounds"] = outbounds.ToArray();
@@ -73,6 +73,54 @@ public sealed class SingBoxConfigFactory
         return JsonSerializer.Serialize(root, JsonOptions);
     }
 
+    public string BuildBatch(IEnumerable<ProxyNode> nodes, int startPort)
+    {
+        var nodeList = nodes.ToList();
+        var inbounds = new List<object>();
+        var outbounds = new List<object>();
+        var rules = new List<object>();
+
+        for (var i = 0; i < nodeList.Count; i++)
+        {
+            var node = nodeList[i];
+            var port = startPort + i;
+            var tag = $"proxy-{i}";
+            var inboundTag = $"in-{i}";
+
+            inbounds.Add(new
+            {
+                type = "mixed",
+                tag = inboundTag,
+                listen = "127.0.0.1",
+                listen_port = port,
+            });
+
+            outbounds.Add(BuildProxyOutbound(node, tag));
+
+            rules.Add(new
+            {
+                inbound = inboundTag,
+                outbound = tag,
+            });
+        }
+
+        outbounds.Add(new { type = "direct", tag = "direct" });
+
+        var root = new Dictionary<string, object?>
+        {
+            ["log"] = new { level = "error", timestamp = true },
+            ["inbounds"] = inbounds,
+            ["outbounds"] = outbounds,
+            ["route"] = new
+            {
+                rules = rules,
+                final = "direct"
+            }
+        };
+
+        return JsonSerializer.Serialize(root, JsonOptions);
+    }
+
     private static ProxyNode? ResolveSelectedNode(AppSettings settings)
     {
         var nodes = settings.Nodes;
@@ -90,11 +138,11 @@ public sealed class SingBoxConfigFactory
         return nodes.FirstOrDefault();
     }
 
-    private static object BuildProxyOutbound(ProxyNode node)
+    private static object BuildProxyOutbound(ProxyNode node, string tag)
     {
         var baseOutbound = new Dictionary<string, object?>
         {
-            ["tag"] = "proxy",
+            ["tag"] = tag,
             ["server"] = node.Server,
             ["server_port"] = node.Port,
         };
