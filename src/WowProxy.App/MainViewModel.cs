@@ -11,6 +11,7 @@ using System.Text.Json;
 using System.Windows;
 using Microsoft.Win32;
 using WowProxy.App.Models;
+using WowProxy.App.ViewModels;
 using WowProxy.Core.Abstractions;
 using WowProxy.Core.SingBox;
 using WowProxy.Domain;
@@ -28,6 +29,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private AppSettings _settings;
     private SingBoxCoreAdapter? _core;
+    private DashboardViewModel _dashboard;
 
     private string? _singBoxPath;
     private string _mixedPortText;
@@ -82,9 +84,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
         TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
         TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
+
+        _dashboard = new DashboardViewModel(this);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public DashboardViewModel Dashboard => _dashboard;
 
     public RelayCommand BrowseSingBoxCommand { get; }
     public AsyncRelayCommand ConnectCommand { get; }
@@ -136,6 +142,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             _enableClashApi = value;
             OnPropertyChanged();
+        }
+    }
+
+    public int ClashApiPort
+    {
+        get
+        {
+            int.TryParse(ClashApiPortText, out var port);
+            return port;
         }
     }
 
@@ -340,6 +355,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _dashboard.Dispose();
         await StopAsync();
         _systemProxy.RestoreFromSnapshotIfAny();
     }

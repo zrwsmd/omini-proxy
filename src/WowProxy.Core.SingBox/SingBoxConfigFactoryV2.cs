@@ -51,14 +51,15 @@ public sealed class SingBoxConfigFactoryV2
         }
 
         var experimental = new Dictionary<string, object?>();
-        if (settings.EnableClashApi)
+        
+        // 始终开启 Clash API 以支持实时连接监控
+        // 如果用户未自定义端口，则使用默认的 9090
+        var clashApiPort = settings.ClashApiPort > 0 ? settings.ClashApiPort : 9090;
+        experimental["clash_api"] = new
         {
-            experimental["clash_api"] = new
-            {
-                external_controller = $"127.0.0.1:{settings.ClashApiPort}",
-                secret = settings.ClashApiSecret ?? string.Empty,
-            };
-        }
+            external_controller = $"127.0.0.1:{clashApiPort}",
+            secret = settings.ClashApiSecret ?? string.Empty,
+        };
 
         if (settings.EnableDirectCn && hasProxy)
         {

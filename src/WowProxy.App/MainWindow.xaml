@@ -6,63 +6,14 @@
         xmlns:local="clr-namespace:WowProxy.App"
         mc:Ignorable="d"
         Title="WowProxy" Height="560" Width="920">
-    <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <Grid Grid.Row="0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="sing-box 路径" />
-            <TextBox Grid.Column="1" MinWidth="520" Text="{Binding SingBoxPath, UpdateSourceTrigger=PropertyChanged}" />
-            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="浏览" Command="{Binding BrowseSingBoxCommand}" />
-        </Grid>
-
-        <Grid Grid.Row="1" Margin="0,12,0,12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="120" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="200" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="100" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Mixed 端口" />
-            <TextBox Grid.Column="1" Text="{Binding MixedPortText, UpdateSourceTrigger=PropertyChanged}" />
-
-            <CheckBox Grid.Column="2" VerticalAlignment="Center" Margin="16,0,8,0" Content="启用 Clash API" IsChecked="{Binding EnableClashApi}" />
-            <TextBox Grid.Column="3" Text="{Binding ClashApiPortText, UpdateSourceTrigger=PropertyChanged}" />
-
-            <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="16,0,8,0" Text="Secret" />
-            <TextBox Grid.Column="5" Text="{Binding ClashApiSecret, UpdateSourceTrigger=PropertyChanged}" />
-
-            <TextBlock Grid.Column="6" VerticalAlignment="Center" Margin="16,0,8,0" Text="日志级别" />
-            <ComboBox Grid.Column="7" SelectedValuePath="Content" SelectedValue="{Binding LogLevel, UpdateSourceTrigger=PropertyChanged}">
-                <ComboBoxItem Content="info" />
-                <ComboBoxItem Content="debug" />
-                <ComboBoxItem Content="trace" />
-            </ComboBox>
-
-            <CheckBox Grid.Column="8" Margin="16,0,0,0" VerticalAlignment="Center" Content="国内直连" IsChecked="{Binding EnableDirectCn}" />
-        </Grid>
-
-        <Border Grid.Row="2" BorderThickness="1" BorderBrush="#DDD" Padding="8" Margin="0,0,0,12">
-            <Grid>
+    <TabControl Margin="12">
+        <TabItem Header="首页">
+            <Grid Margin="12">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0">
@@ -71,33 +22,84 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="订阅 URL" />
-                    <TextBox Grid.Column="1" MinWidth="520" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" />
-                    <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="更新订阅" Command="{Binding UpdateSubscriptionCommand}" />
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="sing-box 路径" />
+                    <TextBox Grid.Column="1" MinWidth="520" Text="{Binding SingBoxPath, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="浏览" Command="{Binding BrowseSingBoxCommand}" />
                 </Grid>
 
-                <Grid Grid.Row="1" Margin="0,8,0,0">
+                <Grid Grid.Row="1" Margin="0,12,0,12">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="120" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="100" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock VerticalAlignment="Top" Margin="0,6,8,0" Text="节点链接" />
-                    <TextBox
+
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Mixed 端口" />
+                    <TextBox Grid.Column="1" Text="{Binding MixedPortText, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <CheckBox Grid.Column="2" VerticalAlignment="Center" Margin="16,0,8,0" Content="启用 Clash API" IsChecked="{Binding EnableClashApi}" />
+                    <TextBox Grid.Column="3" Text="{Binding ClashApiPortText, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="16,0,8,0" Text="Secret" />
+                    <TextBox Grid.Column="5" Text="{Binding ClashApiSecret, UpdateSourceTrigger=PropertyChanged}" />
+
+                    <TextBlock Grid.Column="6" VerticalAlignment="Center" Margin="16,0,8,0" Text="日志级别" />
+                    <ComboBox Grid.Column="7" SelectedValuePath="Content" SelectedValue="{Binding LogLevel, UpdateSourceTrigger=PropertyChanged}">
+                        <ComboBoxItem Content="info" />
+                        <ComboBoxItem Content="debug" />
+                        <ComboBoxItem Content="trace" />
+                    </ComboBox>
+
+                    <CheckBox Grid.Column="8" Margin="16,0,0,0" VerticalAlignment="Center" Content="国内直连" IsChecked="{Binding EnableDirectCn}" />
+                </Grid>
+
+                <Border Grid.Row="2" BorderThickness="1" BorderBrush="#DDD" Padding="8" Margin="0,0,0,12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="订阅 URL" />
+                            <TextBox Grid.Column="1" MinWidth="520" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="更新订阅" Command="{Binding UpdateSubscriptionCommand}" />
+                        </Grid>
+
+                        <Grid Grid.Row="1" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock VerticalAlignment="Top" Margin="0,6,8,0" Text="节点链接" />
+                            <TextBox
                         Grid.Column="1"
                         Height="64"
                         VerticalScrollBarVisibility="Auto"
                         AcceptsReturn="True"
                         Text="{Binding NodeImportText, UpdateSourceTrigger=PropertyChanged}" />
-                    <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="导入" Command="{Binding ImportLinksCommand}" />
-                </Grid>
+                            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="导入" Command="{Binding ImportLinksCommand}" />
+                        </Grid>
 
-                <Grid Grid.Row="2" Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <DataGrid
+                        <Grid Grid.Row="2" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <DataGrid
                         Height="180"
                         ItemsSource="{Binding Nodes}"
                         SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
@@ -108,46 +110,46 @@
                         GridLinesVisibility="Horizontal"
                         BorderThickness="1"
                         BorderBrush="#ABADB3">
-                        <DataGrid.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
-                                <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
-                            </ContextMenu>
-                        </DataGrid.ContextMenu>
-                        <DataGrid.Resources>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2E8B57"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2E8B57"/>
-                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
-                        </DataGrid.Resources>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="90"/>
-                            <DataGridTextColumn Header="别名" Binding="{Binding Name}" Width="*"/>
-                            <DataGridTextColumn Header="地址" Binding="{Binding Server}" Width="140"/>
-                            <DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="60"/>
-                            <DataGridTextColumn Header="传输" Binding="{Binding TransportType}" Width="60"/>
-                            <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled, Mode=OneWay}" Width="40"/>
-                            <DataGridTextColumn Header="延迟 (ms)" Binding="{Binding Latency}" Width="80"/>
-                            <DataGridTextColumn Header="速度 (MB/s)" Binding="{Binding Speed}" Width="90"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                    <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                        <Button Padding="12,6" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" />
-                        <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="TUN 模式" IsChecked="{Binding EnableTun}" />
-                        <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
-                        <TextBlock Margin="0,8,0,0" Text="{Binding StatusText}" />
-                        <Button Margin="0,8,0,0" Padding="12,6" Content="清空" Command="{Binding ClearNodesCommand}" />
-                    </StackPanel>
-                </Grid>
-            </Grid>
-        </Border>
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
+                                        <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
+                                <DataGrid.Resources>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2E8B57"/>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2E8B57"/>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+                                </DataGrid.Resources>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="90"/>
+                                    <DataGridTextColumn Header="别名" Binding="{Binding Name}" Width="*"/>
+                                    <DataGridTextColumn Header="地址" Binding="{Binding Server}" Width="140"/>
+                                    <DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="60"/>
+                                    <DataGridTextColumn Header="传输" Binding="{Binding TransportType}" Width="60"/>
+                                    <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled, Mode=OneWay}" Width="40"/>
+                                    <DataGridTextColumn Header="延迟 (ms)" Binding="{Binding Latency}" Width="80"/>
+                                    <DataGridTextColumn Header="速度 (MB/s)" Binding="{Binding Speed}" Width="90"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                <Button Padding="12,6" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" />
+                                <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="TUN 模式" IsChecked="{Binding EnableTun}" />
+                                <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
+                                <TextBlock Margin="0,8,0,0" Text="{Binding StatusText}" />
+                                <Button Margin="0,8,0,0" Padding="12,6" Content="清空" Command="{Binding ClearNodesCommand}" />
+                            </StackPanel>
+                        </Grid>
+                    </Grid>
+                </Border>
 
-        <Grid Grid.Row="3">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+                <Grid Grid.Row="3">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
 
-            <TextBox
+                    <TextBox
                 Margin="0,12,0,0"
                 VerticalScrollBarVisibility="Auto"
                 HorizontalScrollBarVisibility="Auto"
@@ -155,6 +157,57 @@
                 FontFamily="Consolas"
                 Text="{Binding LogsText, Mode=OneWay}"
                 TextWrapping="NoWrap" />
-        </Grid>
-    </Grid>
+                </Grid>
+            </Grid>
+        </TabItem>
+        <TabItem Header="连接详情">
+            <Grid DataContext="{Binding Dashboard}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="12,12,12,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="搜索过滤" />
+                    <TextBox Grid.Column="1" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+
+                <DataGrid
+                    Grid.Row="1"
+                    Margin="12"
+                    ItemsSource="{Binding Connections}"
+                    AutoGenerateColumns="False"
+                    IsReadOnly="True"
+                    SelectionMode="Single"
+                    HeadersVisibility="Column"
+                    GridLinesVisibility="Horizontal"
+                    BorderThickness="1"
+                    BorderBrush="#ABADB3">
+                    <DataGrid.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="断开连接" Command="{Binding CloseConnectionCommand}" CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ContextMenu}}}" />
+                        </ContextMenu>
+                    </DataGrid.ContextMenu>
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="进程" Binding="{Binding Process}" Width="150"/>
+                        <DataGridTextColumn Header="目标主机" Binding="{Binding Host}" Width="200"/>
+                        <DataGridTextColumn Header="端口" Binding="{Binding DestinationPort}" Width="60"/>
+                        <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="80"/>
+                        <DataGridTextColumn Header="网络" Binding="{Binding Network}" Width="60"/>
+                        <DataGridTextColumn Header="策略链" Binding="{Binding Chains}" Width="200"/>
+                        <DataGridTextColumn Header="规则" Binding="{Binding Rule}" Width="120"/>
+                        <DataGridTextColumn Header="上传速度" Binding="{Binding UploadSpeedText}" Width="100"/>
+                        <DataGridTextColumn Header="下载速度" Binding="{Binding DownloadSpeedText}" Width="100"/>
+                        <DataGridTextColumn Header="上传总量" Binding="{Binding UploadTotalText}" Width="100"/>
+                        <DataGridTextColumn Header="下载总量" Binding="{Binding DownloadTotalText}" Width="100"/>
+                        <DataGridTextColumn Header="开始时间" Binding="{Binding Start, StringFormat={}{0:HH:mm:ss}}" Width="80"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </TabItem>
+    </TabControl>
 </Window>

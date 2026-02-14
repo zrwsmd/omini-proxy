@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WowProxy.Domain\WowProxy.Domain.csproj" />
+    <ProjectReference Include="..\WowProxy.Core.Abstractions\WowProxy.Core.Abstractions.csproj" />
   </ItemGroup>
 
 </Project>
