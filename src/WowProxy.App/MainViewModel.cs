@@ -13,6 +13,7 @@ using Microsoft.Win32;
 using WowProxy.App.Models;
 using WowProxy.App.ViewModels;
 using WowProxy.Core.Abstractions;
+using WowProxy.Core.Abstractions.Models;
 using WowProxy.Core.SingBox;
 using WowProxy.Domain;
 using WowProxy.Infrastructure;
@@ -30,21 +31,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private AppSettings _settings;
     private SingBoxCoreAdapter? _core;
     private DashboardViewModel _dashboard;
+    private SettingsViewModel _settingsViewModel;
 
-    private string? _singBoxPath;
-    private string _mixedPortText;
-    private bool _enableClashApi;
-    private string _clashApiPortText;
-    private string? _clashApiSecret;
     private bool _enableSystemProxy;
     private string _statusText;
     private string? _subscriptionUrl;
     private string _nodeImportText;
     private readonly ObservableCollection<ProxyNodeModel> _nodes;
     private ProxyNodeModel? _selectedNode;
+    private ProxyNodeModel? _activeNode;
     private string _connectButtonText;
-    private string _logLevel;
-    private bool _enableDirectCn;
     private bool _enableTun;
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
@@ -53,22 +49,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _systemProxy = systemProxy;
         _settings = settings;
 
-        _singBoxPath = settings.SingBoxPath;
-        _mixedPortText = settings.MixedPort.ToString();
-        _enableClashApi = settings.EnableClashApi;
-        _clashApiPortText = settings.ClashApiPort.ToString();
-        _clashApiSecret = settings.ClashApiSecret;
         _enableSystemProxy = settings.EnableSystemProxy;
         _subscriptionUrl = settings.SubscriptionUrl;
         _nodeImportText = string.Empty;
         _nodes = new ObservableCollection<ProxyNodeModel>((settings.Nodes ?? new List<ProxyNode>())
             .Select(n => new ProxyNodeModel(n)));
-        _selectedNode = !string.IsNullOrWhiteSpace(settings.SelectedNodeId)
-            ? _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
-            : _nodes.FirstOrDefault();
+        
+        // Restore Active Node from settings
+        if (!string.IsNullOrWhiteSpace(settings.SelectedNodeId))
+        {
+            var activeNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase));
+            if (activeNode != null)
+            {
+                // 先不要直接赋值 _activeNode，通过 ActiveNode 属性来触发 IsActive 的更新
+                ActiveNode = activeNode;
+            }
+        }
+        
+        // Select the active node by default if available, otherwise the first one
+        _selectedNode = _activeNode ?? _nodes.FirstOrDefault();
+
         _connectButtonText = "连接";
-        _logLevel = string.IsNullOrWhiteSpace(settings.LogLevel) ? "info" : settings.LogLevel;
-        _enableDirectCn = settings.EnableDirectCn;
         _enableTun = settings.EnableTun;
         _statusText = "未启动";
 
@@ -77,111 +78,53 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _enableSystemProxy = false;
         }
 
-        BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
         ConnectCommand = new AsyncRelayCommand(_ => ToggleConnectAsync());
         UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
         ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
+        RemoveNodeCommand = new RelayCommand(_ => RemoveNode());
+        SetActiveNodeCommand = new RelayCommand(_ => SetActiveNode());
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
         TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
         TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
 
         _dashboard = new DashboardViewModel(this);
+        _settingsViewModel = new SettingsViewModel(this, settings);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public DashboardViewModel Dashboard => _dashboard;
+    public SettingsViewModel Settings => _settingsViewModel;
 
-    public RelayCommand BrowseSingBoxCommand { get; }
     public AsyncRelayCommand ConnectCommand { get; }
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
     public AsyncRelayCommand ImportLinksCommand { get; }
+    public RelayCommand RemoveNodeCommand { get; }
+    public RelayCommand SetActiveNodeCommand { get; }
     public RelayCommand ClearNodesCommand { get; }
     public AsyncRelayCommand TestLatencyCommand { get; }
     public AsyncRelayCommand TestSpeedCommand { get; }
-
-    public string? SingBoxPath
-    {
-        get => _singBoxPath;
-        set
-        {
-            if (_singBoxPath == value)
-            {
-                return;
-            }
-
-            _singBoxPath = value;
-            OnPropertyChanged();
-        }
+    
+    // 代理原有的属性访问到 SettingsViewModel，或者直接在 StartAsync 中使用 SettingsViewModel 的值
+    public string? SingBoxPath => _settingsViewModel.SingBoxPath;
+    public bool EnableClashApi => _settingsViewModel.EnableClashApi;
+    public string? ClashApiSecret 
+    { 
+        get => _settingsViewModel.ClashApiSecret;
+        set => _settingsViewModel.ClashApiSecret = value;
     }
-
-    public string MixedPortText
-    {
-        get => _mixedPortText;
-        set
-        {
-            if (_mixedPortText == value)
-            {
-                return;
-            }
-
-            _mixedPortText = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public bool EnableClashApi
-    {
-        get => _enableClashApi;
-        set
-        {
-            if (_enableClashApi == value)
-            {
-                return;
-            }
-
-            _enableClashApi = value;
-            OnPropertyChanged();
-        }
-    }
-
     public int ClashApiPort
     {
         get
         {
-            int.TryParse(ClashApiPortText, out var port);
+            int.TryParse(_settingsViewModel.ClashApiPortText, out var port);
             return port;
         }
     }
 
-    public string ClashApiPortText
+    public void NotifySettingsChanged()
     {
-        get => _clashApiPortText;
-        set
-        {
-            if (_clashApiPortText == value)
-            {
-                return;
-            }
-
-            _clashApiPortText = value;
-            OnPropertyChanged();
-        }
-    }
-
-    public string? ClashApiSecret
-    {
-        get => _clashApiSecret;
-        set
-        {
-            if (_clashApiSecret == value)
-            {
-                return;
-            }
-
-            _clashApiSecret = value;
-            OnPropertyChanged();
-        }
+        _ = PersistSelectionAsync();
     }
 
     public bool EnableSystemProxy
@@ -208,37 +151,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public string LogLevel
-    {
-        get => _logLevel;
-        set
-        {
-            if (_logLevel == value)
-            {
-                return;
-            }
-
-            _logLevel = value;
-            OnPropertyChanged();
-            _ = PersistSelectionAsync();
-        }
-    }
-
-    public bool EnableDirectCn
-    {
-        get => _enableDirectCn;
-        set
-        {
-            if (_enableDirectCn == value)
-            {
-                return;
-            }
-
-            _enableDirectCn = value;
-            OnPropertyChanged();
-            _ = PersistSelectionAsync();
-        }
-    }
+    public string LogLevel => _settingsViewModel.LogLevel;
+    public bool EnableDirectCn => _settingsViewModel.EnableDirectCn;
 
     public bool EnableTun
     {
@@ -308,6 +222,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             _selectedNode = value;
             OnPropertyChanged();
+            // Selection change no longer triggers persistence
+        }
+    }
+
+    public ProxyNodeModel? ActiveNode
+    {
+        get => _activeNode;
+        private set
+        {
+            if (ReferenceEquals(_activeNode, value))
+            {
+                return;
+            }
+
+            if (_activeNode != null)
+            {
+                _activeNode.IsActive = false;
+            }
+
+            _activeNode = value;
+
+            if (_activeNode != null)
+            {
+                _activeNode.IsActive = true;
+            }
+
+            OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
     }
@@ -362,16 +303,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void BrowseSingBox()
     {
-        var dialog = new OpenFileDialog
-        {
-            Title = "选择 sing-box.exe",
-            Filter = "sing-box.exe|sing-box.exe|可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",
-        };
-
-        if (dialog.ShowDialog() == true)
-        {
-            SingBoxPath = dialog.FileName;
-        }
+        // Moved to SettingsViewModel
     }
 
     private async Task StartAsync()
@@ -383,6 +315,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
+        // 使用 SettingsViewModel 中的值
         if (!TryParsePorts(out var mixedPort, out var clashApiPort, out var error))
         {
             StatusText = error;
@@ -395,9 +328,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        if (_nodes.Count > 0 && SelectedNode is null)
+        if (_nodes.Count > 0 && ActiveNode is null)
         {
-            StatusText = "请先选择节点";
+            StatusText = "请先设置活动节点";
             return;
         }
 
@@ -408,9 +341,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        if (SelectedNode is not null)
+        if (ActiveNode is not null)
         {
-            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(SelectedNode.Node)));
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(ActiveNode.Node)));
         }
 
         var secret = EnableClashApi
@@ -430,7 +363,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             EnableSystemProxy: enableSystemProxy,
             SubscriptionUrl: SubscriptionUrl,
             Nodes: _nodes.Select(n => n.Node).ToList(),
-            SelectedNodeId: SelectedNode?.Id,
+            SelectedNodeId: ActiveNode?.Id,
             LogLevel: LogLevel,
             EnableDirectCn: EnableDirectCn,
             EnableTun: EnableTun
@@ -670,28 +603,34 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         Application.Current.Dispatcher.Invoke(() =>
         {
+            var activeId = ActiveNode?.Id;
             _nodes.Clear();
             foreach (var n in nodes)
             {
                 _nodes.Add(new ProxyNodeModel(n));
             }
 
-            if (!string.IsNullOrWhiteSpace(_settings.SelectedNodeId))
+            if (!string.IsNullOrWhiteSpace(activeId))
             {
-                SelectedNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, _settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase))
-                    ?? _nodes.FirstOrDefault();
+                ActiveNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, activeId, StringComparison.OrdinalIgnoreCase));
             }
-            else
+            
+            // If active node is lost or was null, try to restore from settings (if partial update?) 
+            // actually _settings.SelectedNodeId holds the active one.
+            if (ActiveNode == null && !string.IsNullOrWhiteSpace(_settings.SelectedNodeId))
             {
-                SelectedNode = _nodes.FirstOrDefault();
+                 ActiveNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, _settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase));
             }
+
+            // Auto-select the first one for UI convenience, but don't change ActiveNode
+            SelectedNode = ActiveNode ?? _nodes.FirstOrDefault();
         });
 
         _settings = _settings with
         {
             SubscriptionUrl = url,
             Nodes = nodes,
-            SelectedNodeId = SelectedNode?.Id,
+            SelectedNodeId = ActiveNode?.Id,
         };
 
         await _settingsStore.SaveAsync(_settings);
@@ -764,7 +703,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _settings = _settings with
         {
             Nodes = merged,
-            SelectedNodeId = SelectedNode?.Id,
+            SelectedNodeId = ActiveNode?.Id,
         };
 
         await _settingsStore.SaveAsync(_settings);
@@ -778,15 +717,48 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         StatusText = "已导入节点";
     }
 
-    private async Task ApplyNodeAsync()
+    private void SetActiveNode()
     {
         if (SelectedNode is null)
         {
-            StatusText = "请先选择节点";
+            StatusText = "请先选择一个节点";
             return;
         }
 
-        await StartAsync();
+        ActiveNode = SelectedNode;
+        StatusText = $"活动节点已切换：{ActiveNode.Name}";
+        
+        // 如果正在运行，提示用户重启或者自动重启（目前先只更新状态，下次连接生效，或者用户手动重连）
+        if (_core?.RuntimeInfo.State == CoreState.Running)
+        {
+             StatusText += " (请重新连接以生效)";
+        }
+    }
+
+    private void RemoveNode()
+    {
+        if (SelectedNode is null)
+        {
+            StatusText = "请先选择要移除的节点";
+            return;
+        }
+
+        var nodeToRemove = SelectedNode;
+        _nodes.Remove(nodeToRemove);
+
+        if (ReferenceEquals(ActiveNode, nodeToRemove))
+        {
+            ActiveNode = null;
+        }
+
+        // SelectedNode usually becomes null or next item automatically by DataGrid, but let's be safe
+        if (ReferenceEquals(SelectedNode, nodeToRemove))
+        {
+            SelectedNode = null;
+        }
+
+        _ = PersistSelectionAsync();
+        StatusText = "节点已移除";
     }
 
     private void ClearNodes()
@@ -809,7 +781,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _settings = _settings with
             {
                 Nodes = _nodes.Select(n => n.Node).ToList(),
-                SelectedNodeId = SelectedNode?.Id,
+                SelectedNodeId = ActiveNode?.Id, // Persist Active Node, not Selected
                 SubscriptionUrl = SubscriptionUrl,
                 LogLevel = LogLevel,
                 EnableDirectCn = EnableDirectCn,
@@ -932,13 +904,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         clashApiPort = 0;
         error = string.Empty;
 
-        if (!int.TryParse(MixedPortText, out mixedPort) || mixedPort is < 1 or > 65535)
+        if (!int.TryParse(_settingsViewModel.MixedPortText, out mixedPort) || mixedPort is < 1 or > 65535)
         {
             error = "Mixed 端口无效";
             return false;
         }
 
-        if (!int.TryParse(ClashApiPortText, out clashApiPort) || clashApiPort is < 1 or > 65535)
+        if (!int.TryParse(_settingsViewModel.ClashApiPortText, out clashApiPort) || clashApiPort is < 1 or > 65535)
         {
             error = "Clash API 端口无效";
             return false;

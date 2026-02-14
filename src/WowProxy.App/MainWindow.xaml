@@ -4,105 +4,214 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:WowProxy.App"
+        xmlns:views="clr-namespace:WowProxy.App.Views"
+        xmlns:converters="clr-namespace:WowProxy.App.Converters"
         mc:Ignorable="d"
-        Title="WowProxy" Height="560" Width="920">
-    <TabControl Margin="12">
-        <TabItem Header="首页">
-            <Grid Margin="12">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+        Title="WowProxy" Height="600" Width="1000">
+    <Window.Resources>
+        <converters:StatusColorConverter x:Key="StatusColorConverter" />
+    </Window.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="sing-box 路径" />
-                    <TextBox Grid.Column="1" MinWidth="520" Text="{Binding SingBoxPath, UpdateSourceTrigger=PropertyChanged}" />
-                    <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="浏览" Command="{Binding BrowseSingBoxCommand}" />
-                </Grid>
-
-                <Grid Grid.Row="1" Margin="0,12,0,12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="120" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="120" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="200" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="100" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="Mixed 端口" />
-                    <TextBox Grid.Column="1" Text="{Binding MixedPortText, UpdateSourceTrigger=PropertyChanged}" />
-
-                    <CheckBox Grid.Column="2" VerticalAlignment="Center" Margin="16,0,8,0" Content="启用 Clash API" IsChecked="{Binding EnableClashApi}" />
-                    <TextBox Grid.Column="3" Text="{Binding ClashApiPortText, UpdateSourceTrigger=PropertyChanged}" />
-
-                    <TextBlock Grid.Column="4" VerticalAlignment="Center" Margin="16,0,8,0" Text="Secret" />
-                    <TextBox Grid.Column="5" Text="{Binding ClashApiSecret, UpdateSourceTrigger=PropertyChanged}" />
-
-                    <TextBlock Grid.Column="6" VerticalAlignment="Center" Margin="16,0,8,0" Text="日志级别" />
-                    <ComboBox Grid.Column="7" SelectedValuePath="Content" SelectedValue="{Binding LogLevel, UpdateSourceTrigger=PropertyChanged}">
-                        <ComboBoxItem Content="info" />
-                        <ComboBoxItem Content="debug" />
-                        <ComboBoxItem Content="trace" />
+        <!-- 顶部状态栏 -->
+        <Border Grid.Row="0" Background="#F5F5F5" Padding="12,8" BorderBrush="#DDD" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="当前内核: " VerticalAlignment="Center" FontWeight="Bold" />
+                    <ComboBox Margin="8,0,0,0" Width="120" SelectedIndex="0">
+                        <ComboBoxItem Content="sing-box" />
                     </ComboBox>
+                    
+                    <TextBlock Text="状态: " VerticalAlignment="Center" Margin="24,0,0,0" FontWeight="Bold" />
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="8,0,0,0">
+                        <TextBlock.Foreground>
+                            <Binding Path="StatusText" Converter="{StaticResource StatusColorConverter}" />
+                        </TextBlock.Foreground>
+                    </TextBlock>
+                </StackPanel>
 
-                    <CheckBox Grid.Column="8" Margin="16,0,0,0" VerticalAlignment="Center" Content="国内直连" IsChecked="{Binding EnableDirectCn}" />
-                </Grid>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <CheckBox Content="系统代理" IsChecked="{Binding EnableSystemProxy}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                    <CheckBox Content="TUN 模式" IsChecked="{Binding EnableTun}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
-                <Border Grid.Row="2" BorderThickness="1" BorderBrush="#DDD" Padding="8" Margin="0,0,0,12">
-                    <Grid>
+        <!-- 主内容区 -->
+        <TabControl Grid.Row="1" Margin="12">
+            <TabItem Header="仪表盘">
+                <Grid Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="200" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 左侧：节点列表 -->
+                    <Grid Grid.Column="0" Margin="0,0,12,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0">
+                        <!-- 订阅管理 -->
+                        <Grid Grid.Row="0" Margin="0,0,0,12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="订阅 URL" />
-                            <TextBox Grid.Column="1" MinWidth="520" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="更新订阅" Command="{Binding UpdateSubscriptionCommand}" />
+                            <TextBlock Text="订阅 URL" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox Grid.Column="1" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Grid.Column="2" Content="更新" Margin="8,0,0,0" Padding="12,4" Command="{Binding UpdateSubscriptionCommand}" />
                         </Grid>
 
-                        <Grid Grid.Row="1" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
+                        <!-- 导入链接 -->
+                        <Grid Grid.Row="1" Margin="0,0,0,12">
+                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock VerticalAlignment="Top" Margin="0,6,8,0" Text="节点链接" />
-                            <TextBox
-                        Grid.Column="1"
-                        Height="64"
-                        VerticalScrollBarVisibility="Auto"
-                        AcceptsReturn="True"
-                        Text="{Binding NodeImportText, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Grid.Column="2" Margin="8,0,0,0" Padding="12,6" Content="导入" Command="{Binding ImportLinksCommand}" />
+                            <TextBlock Text="快速导入" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox Grid.Column="1" Text="{Binding NodeImportText, UpdateSourceTrigger=PropertyChanged}" Height="26" />
+                            <Button Grid.Column="2" Content="导入" Margin="8,0,0,0" Padding="12,4" Command="{Binding ImportLinksCommand}" />
                         </Grid>
 
-                        <Grid Grid.Row="2" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <DataGrid
-                        Height="180"
-                        ItemsSource="{Binding Nodes}"
-                        SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                        <!-- 节点表格 -->
+                        <DataGrid Grid.Row="2"
+                                  ItemsSource="{Binding Nodes}"
+                                  SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  SelectionMode="Single"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  BorderThickness="1"
+                                  BorderBrush="#ABADB3">
+                            <DataGrid.Resources>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#808080"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#808080"/>
+                                <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
+                            </DataGrid.Resources>
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="设为活动服务器" Command="{Binding SetActiveNodeCommand}" />
+                                    <Separator />
+                                    <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
+                                    <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
+                                    <Separator />
+                                    <MenuItem Header="移除节点" Command="{Binding RemoveNodeCommand}" />
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
+                            <DataGrid.RowStyle>
+                                <Style TargetType="DataGridRow">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                            <Setter Property="Background" Value="#2E8B57"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </DataTrigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsActive}" Value="True" />
+                                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Background" Value="#2E8B57"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.RowStyle>
+                            <DataGrid.CellStyle>
+                                <Style TargetType="DataGridCell">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                            <Setter Property="Background" Value="#2E8B57"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </DataTrigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsActive}" Value="True" />
+                                                <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True" />
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Background" Value="#2E8B57"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </DataGrid.CellStyle>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="80"/>
+                                <DataGridTextColumn Header="别名" Binding="{Binding Name}" Width="*"/>
+                                <DataGridTextColumn Header="地址" Binding="{Binding Server}" Width="140"/>
+                                <DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="60"/>
+                                <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled, Mode=OneWay}" Width="40"/>
+                                <DataGridTextColumn Header="延迟" Binding="{Binding Latency}" Width="70"/>
+                                <DataGridTextColumn Header="速度" Binding="{Binding Speed}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+
+                    <!-- 右侧：控制面板 -->
+                    <Grid Grid.Column="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0">
+                            <Button Content="{Binding ConnectButtonText}" Height="40" FontSize="16" FontWeight="Bold" Command="{Binding ConnectCommand}" Margin="0,0,0,12" />
+                            <Button Content="测试延迟" Margin="0,0,0,8" Padding="0,6" Command="{Binding TestLatencyCommand}" />
+                            <Button Content="测试速度" Margin="0,0,0,8" Padding="0,6" Command="{Binding TestSpeedCommand}" />
+                            <Button Content="移除节点" Margin="0,0,0,8" Padding="0,6" Command="{Binding RemoveNodeCommand}" />
+                        </StackPanel>
+                        
+                        <GroupBox Header="运行日志" Grid.Row="1" Margin="0,12,0,0">
+                            <TextBox Text="{Binding LogsText, Mode=OneWay}" 
+                                     IsReadOnly="True" 
+                                     VerticalScrollBarVisibility="Auto" 
+                                     TextWrapping="Wrap" 
+                                     FontFamily="Consolas" 
+                                     FontSize="11" 
+                                     BorderThickness="0" />
+                        </GroupBox>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="连接详情">
+                <Grid DataContext="{Binding Dashboard}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,12,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="搜索过滤" />
+                        <TextBox Grid.Column="1" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+                    </Grid>
+
+                    <DataGrid
+                        Grid.Row="1"
+                        ItemsSource="{Binding Connections}"
                         AutoGenerateColumns="False"
                         IsReadOnly="True"
                         SelectionMode="Single"
@@ -110,104 +219,39 @@
                         GridLinesVisibility="Horizontal"
                         BorderThickness="1"
                         BorderBrush="#ABADB3">
-                                <DataGrid.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
-                                        <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
-                                    </ContextMenu>
-                                </DataGrid.ContextMenu>
-                                <DataGrid.Resources>
-                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2E8B57"/>
-                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
-                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#2E8B57"/>
-                                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="White"/>
-                                </DataGrid.Resources>
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="90"/>
-                                    <DataGridTextColumn Header="别名" Binding="{Binding Name}" Width="*"/>
-                                    <DataGridTextColumn Header="地址" Binding="{Binding Server}" Width="140"/>
-                                    <DataGridTextColumn Header="端口" Binding="{Binding Port}" Width="60"/>
-                                    <DataGridTextColumn Header="传输" Binding="{Binding TransportType}" Width="60"/>
-                                    <DataGridCheckBoxColumn Header="TLS" Binding="{Binding TlsEnabled, Mode=OneWay}" Width="40"/>
-                                    <DataGridTextColumn Header="延迟 (ms)" Binding="{Binding Latency}" Width="80"/>
-                                    <DataGridTextColumn Header="速度 (MB/s)" Binding="{Binding Speed}" Width="90"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
-                                <Button Padding="12,6" Content="{Binding ConnectButtonText}" Command="{Binding ConnectCommand}" />
-                                <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="TUN 模式" IsChecked="{Binding EnableTun}" />
-                                <CheckBox Margin="0,8,0,0" VerticalAlignment="Center" Content="系统代理" IsChecked="{Binding EnableSystemProxy}" />
-                                <TextBlock Margin="0,8,0,0" Text="{Binding StatusText}" />
-                                <Button Margin="0,8,0,0" Padding="12,6" Content="清空" Command="{Binding ClearNodesCommand}" />
-                            </StackPanel>
-                        </Grid>
-                    </Grid>
-                </Border>
-
-                <Grid Grid.Row="3">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <TextBox
-                Margin="0,12,0,0"
-                VerticalScrollBarVisibility="Auto"
-                HorizontalScrollBarVisibility="Auto"
-                IsReadOnly="True"
-                FontFamily="Consolas"
-                Text="{Binding LogsText, Mode=OneWay}"
-                TextWrapping="NoWrap" />
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="断开连接" Command="{Binding CloseConnectionCommand}" CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ContextMenu}}}" />
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="进程" Binding="{Binding Process}" Width="140"/>
+                            <DataGridTextColumn Header="目标主机" Binding="{Binding Host}" Width="180"/>
+                            <DataGridTextColumn Header="端口" Binding="{Binding DestinationPort}" Width="60"/>
+                            <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="80"/>
+                            <DataGridTextColumn Header="网络" Binding="{Binding Network}" Width="50"/>
+                            <DataGridTextColumn Header="策略链" Binding="{Binding Chains}" Width="150"/>
+                            <DataGridTextColumn Header="规则" Binding="{Binding Rule}" Width="100"/>
+                            <DataGridTextColumn Header="上传速度" Binding="{Binding UploadSpeedText}" Width="90"/>
+                            <DataGridTextColumn Header="下载速度" Binding="{Binding DownloadSpeedText}" Width="90"/>
+                            <DataGridTextColumn Header="上传总量" Binding="{Binding UploadTotalText}" Width="90"/>
+                            <DataGridTextColumn Header="下载总量" Binding="{Binding DownloadTotalText}" Width="90"/>
+                            <DataGridTextColumn Header="开始时间" Binding="{Binding Start, StringFormat={}{0:HH:mm:ss}}" Width="80"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </Grid>
-            </Grid>
-        </TabItem>
-        <TabItem Header="连接详情">
-            <Grid DataContext="{Binding Dashboard}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                </Grid.RowDefinitions>
+            </TabItem>
 
-                <Grid Grid.Row="0" Margin="12,12,12,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="搜索过滤" />
-                    <TextBox Grid.Column="1" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
-                </Grid>
+            <TabItem Header="设置">
+                <views:SettingsView DataContext="{Binding Settings}" />
+            </TabItem>
+        </TabControl>
 
-                <DataGrid
-                    Grid.Row="1"
-                    Margin="12"
-                    ItemsSource="{Binding Connections}"
-                    AutoGenerateColumns="False"
-                    IsReadOnly="True"
-                    SelectionMode="Single"
-                    HeadersVisibility="Column"
-                    GridLinesVisibility="Horizontal"
-                    BorderThickness="1"
-                    BorderBrush="#ABADB3">
-                    <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="断开连接" Command="{Binding CloseConnectionCommand}" CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type ContextMenu}}}" />
-                        </ContextMenu>
-                    </DataGrid.ContextMenu>
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="进程" Binding="{Binding Process}" Width="150"/>
-                        <DataGridTextColumn Header="目标主机" Binding="{Binding Host}" Width="200"/>
-                        <DataGridTextColumn Header="端口" Binding="{Binding DestinationPort}" Width="60"/>
-                        <DataGridTextColumn Header="类型" Binding="{Binding Type}" Width="80"/>
-                        <DataGridTextColumn Header="网络" Binding="{Binding Network}" Width="60"/>
-                        <DataGridTextColumn Header="策略链" Binding="{Binding Chains}" Width="200"/>
-                        <DataGridTextColumn Header="规则" Binding="{Binding Rule}" Width="120"/>
-                        <DataGridTextColumn Header="上传速度" Binding="{Binding UploadSpeedText}" Width="100"/>
-                        <DataGridTextColumn Header="下载速度" Binding="{Binding DownloadSpeedText}" Width="100"/>
-                        <DataGridTextColumn Header="上传总量" Binding="{Binding UploadTotalText}" Width="100"/>
-                        <DataGridTextColumn Header="下载总量" Binding="{Binding DownloadTotalText}" Width="100"/>
-                        <DataGridTextColumn Header="开始时间" Binding="{Binding Start, StringFormat={}{0:HH:mm:ss}}" Width="80"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Grid>
-        </TabItem>
-    </TabControl>
+        <!-- 底部简略信息 -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem Content="WowProxy v0.11" />
+            <Separator />
+            <StatusBarItem Content="{Binding SelectedNode.Name, StringFormat='节点: {0}', TargetNullValue='未选择节点'}" />
+        </StatusBar>
+    </Grid>
 </Window>

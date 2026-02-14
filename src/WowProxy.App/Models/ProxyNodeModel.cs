@@ -8,6 +8,7 @@ public class ProxyNodeModel : INotifyPropertyChanged
 {
     private int? _latency;
     private double? _speed;
+    private bool _isActive;
 
     public ProxyNodeModel(ProxyNode node)
     {
@@ -26,6 +27,19 @@ public class ProxyNodeModel : INotifyPropertyChanged
     public bool TlsEnabled => Node.TlsEnabled;
 
     // Mutable properties for UI
+    public bool IsActive
+    {
+        get => _isActive;
+        set
+        {
+            if (_isActive != value)
+            {
+                _isActive = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
     public int? Latency
     {
         get => _latency;

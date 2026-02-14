@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Microsoft.Win32;
 using WowProxy.Domain;
+using WowProxy.Core.Abstractions.Models;
 
 namespace WowProxy.Infrastructure;
 
