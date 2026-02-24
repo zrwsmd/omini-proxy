@@ -5,9 +5,10 @@ using WowProxy.Infrastructure;
 
 namespace WowProxy.App;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private MainViewModel? _mainViewModel;
+    private TrayIconManager? _trayIconManager;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -32,6 +33,8 @@ public partial class App : Application
                 DataContext = _mainViewModel,
             };
 
+            _trayIconManager = new TrayIconManager(_mainViewModel, window);
+
             window.Show();
             Bootstrap.WriteStartupLog("OnStartup", "Window shown.");
         }
@@ -44,6 +47,8 @@ public partial class App : Application
 
     protected override async void OnExit(ExitEventArgs e)
     {
+        _trayIconManager?.Dispose();
+
         if (_mainViewModel is not null)
         {
             await _mainViewModel.DisposeAsync();
@@ -77,7 +82,7 @@ public partial class App : Application
     {
         Bootstrap.WriteStartupLog("ShowFatal", ex.ToString());
         var crashPath = WriteCrashLog(ex);
-        MessageBox.Show(
+        System.Windows.MessageBox.Show(
             $"WowProxy 启动失败：{ex.Message}\n\n已写入崩溃日志：\n{crashPath}",
             "WowProxy",
             MessageBoxButton.OK,

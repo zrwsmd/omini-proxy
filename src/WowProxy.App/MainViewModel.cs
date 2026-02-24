@@ -622,7 +622,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         var (nodes, errors) = await NodeImport.LoadFromSubscriptionAsync(url, CancellationToken.None);
 
-        Application.Current.Dispatcher.Invoke(() =>
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             var activeId = ActiveNode?.Id;
             _nodes.Clear();
@@ -709,7 +709,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        Application.Current.Dispatcher.Invoke(() =>
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             _nodes.Clear();
             foreach (var n in merged)
@@ -892,7 +892,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void UpdateStatus(CoreRuntimeInfo info)
     {
-        Application.Current.Dispatcher.BeginInvoke(() =>
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
             StatusText = info.State switch
             {
@@ -923,7 +923,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         if (Interlocked.Exchange(ref _logsUpdateScheduled, 1) == 0)
         {
-            Application.Current.Dispatcher.BeginInvoke(() =>
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
             {
                 Interlocked.Exchange(ref _logsUpdateScheduled, 0);
                 OnPropertyChanged(nameof(LogsText));

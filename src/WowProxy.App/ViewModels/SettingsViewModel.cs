@@ -121,7 +121,7 @@ public class SettingsViewModel : INotifyPropertyChanged
 
     private void BrowseSingBox()
     {
-        var dialog = new OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Title = "选择 sing-box.exe",
             Filter = "sing-box.exe|sing-box.exe|可执行文件 (*.exe)|*.exe|所有文件 (*.*)|*.*",

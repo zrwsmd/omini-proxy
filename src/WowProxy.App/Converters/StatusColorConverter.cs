@@ -12,13 +12,13 @@ public class StatusColorConverter : IValueConverter
         if (value is string status)
         {
             if (status.Contains("运行中"))
-                return new SolidColorBrush(Color.FromRgb(34, 139, 34)); // ForestGreen
+                return new SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 139, 34)); // ForestGreen
             if (status.Contains("启动中"))
-                return Brushes.Orange;
+                return System.Windows.Media.Brushes.Orange;
             if (status.Contains("异常") || status.Contains("失败") || status.Contains("被占用"))
-                return Brushes.Red;
+                return System.Windows.Media.Brushes.Red;
         }
-        return Brushes.Gray;
+        return System.Windows.Media.Brushes.Gray;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
