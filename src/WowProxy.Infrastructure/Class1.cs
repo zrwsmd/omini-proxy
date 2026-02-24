@@ -45,27 +45,66 @@ public sealed class JsonSettingsStore
         WriteIndented = true,
     };
 
+    private readonly SemaphoreSlim _lock = new(1, 1);
+
     public async Task<AppSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
-        var path = AppDataPaths.GetSettingsPath();
-        if (!File.Exists(path))
+        await _lock.WaitAsync(cancellationToken);
+        try
         {
-            var settings = AppSettings.Default;
-            await SaveAsync(settings, cancellationToken);
-            return settings;
-        }
+            var path = AppDataPaths.GetSettingsPath();
+            if (!File.Exists(path))
+            {
+                var settings = AppSettings.Default;
+                // SaveAsync already handles locking
+                _lock.Release(); 
+                try
+                {
+                    await SaveAsync(settings, cancellationToken);
+                }
+                finally
+                {
+                    await _lock.WaitAsync(cancellationToken);
+                }
+                return settings;
+            }
 
-        await using var stream = File.OpenRead(path);
-        var settingsFromDisk = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
-        return settingsFromDisk ?? AppSettings.Default;
+            await using var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            var settingsFromDisk = await JsonSerializer.DeserializeAsync<AppSettings>(stream, JsonOptions, cancellationToken);
+            return settingsFromDisk ?? AppSettings.Default;
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
-        var path = AppDataPaths.GetSettingsPath();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            var path = AppDataPaths.GetSettingsPath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            for (var i = 0; i < 5; i++)
+            {
+                try
+                {
+                    await using var stream = File.Open(path, FileMode.Create, FileAccess.Write, FileShare.None);
+                    await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken);
+                    return;
+                }
+                catch (IOException) when (i < 4)
+                {
+                    await Task.Delay(100, cancellationToken);
+                }
+            }
+        }
+        finally
+        {
+            _lock.Release();
+        }
     }
 }
 

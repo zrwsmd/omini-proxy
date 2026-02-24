@@ -26,6 +26,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly WindowsSystemProxy _systemProxy;
     private readonly StringBuilder _logs = new();
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _coreLock = new(1, 1);
     private int _logsUpdateScheduled;
 
     private AppSettings _settings;
@@ -82,7 +83,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
         ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
         RemoveNodeCommand = new RelayCommand(_ => RemoveNode());
-        SetActiveNodeCommand = new RelayCommand(_ => SetActiveNode());
+        SetActiveNodeCommand = new AsyncRelayCommand(_ => SetActiveNodeAsync());
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
         TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
         TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
@@ -100,7 +101,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
     public AsyncRelayCommand ImportLinksCommand { get; }
     public RelayCommand RemoveNodeCommand { get; }
-    public RelayCommand SetActiveNodeCommand { get; }
+    public AsyncRelayCommand SetActiveNodeCommand { get; }
     public RelayCommand ClearNodesCommand { get; }
     public AsyncRelayCommand TestLatencyCommand { get; }
     public AsyncRelayCommand TestSpeedCommand { get; }
@@ -308,6 +309,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task StartAsync()
     {
+        await _coreLock.WaitAsync();
+        try
+        {
+            await StartLockedAsync();
+        }
+        finally
+        {
+            _coreLock.Release();
+        }
+    }
+
+    private async Task StartLockedAsync()
+    {
         if (EnableTun && !IsRunningAsAdmin())
         {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, "TUN 模式需要管理员权限（请右键以管理员身份运行）。"));
@@ -376,7 +390,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         var configPath = Path.Combine(workDir, "config.json");
 
         var configFactory = new SingBoxConfigFactoryV2();
-        await StopAsync();
+        
+        if (_core is not null)
+        {
+            await _core.StopAsync();
+            await _core.DisposeAsync();
+            _core = null;
+        }
 
         var maxAttempts = EnableTun ? 3 : 1;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
@@ -392,8 +412,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             await configFactory.WriteAsync(runtimeSettings, configPath);
             TryAppendTunSummary(configPath);
 
-            _core = new SingBoxCoreAdapter(_settings.SingBoxPath!);
-            _core.LogReceived += (_, line) =>
+            var core = new SingBoxCoreAdapter(_settings.SingBoxPath!);
+            core.LogReceived += (_, line) =>
             {
                 if (EnableTun)
                 {
@@ -407,9 +427,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
                 AppendLog(line);
             };
-            _core.RuntimeInfoChanged += (_, info) => UpdateStatus(info);
+            core.RuntimeInfoChanged += (_, info) => UpdateStatus(info);
 
-            var check = await _core.CheckConfigAsync(configPath, workDir);
+            var check = await core.CheckConfigAsync(configPath, workDir);
             if (!check.IsOk)
             {
                 AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, check.Stderr.Trim()));
@@ -417,11 +437,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
 
-            await _core.StartAsync(new CoreStartOptions(workDir, configPath));
+            await core.StartAsync(new CoreStartOptions(workDir, configPath));
             await Task.Delay(2500);
 
-            if (_core.RuntimeInfo.State == CoreState.Running)
+            if (core.RuntimeInfo.State == CoreState.Running)
             {
+                _core = core;
                 if (enableSystemProxy)
                 {
                     _systemProxy.EnableGlobalProxy($"127.0.0.1:{mixedPort}");
@@ -717,7 +738,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         StatusText = "已导入节点";
     }
 
-    private void SetActiveNode()
+    private async Task SetActiveNodeAsync()
     {
         if (SelectedNode is null)
         {
@@ -725,13 +746,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
+        var wasRunning = _core?.RuntimeInfo.State == CoreState.Running;
+
         ActiveNode = SelectedNode;
         StatusText = $"活动节点已切换：{ActiveNode.Name}";
-        
-        // 如果正在运行，提示用户重启或者自动重启（目前先只更新状态，下次连接生效，或者用户手动重连）
-        if (_core?.RuntimeInfo.State == CoreState.Running)
+
+        if (wasRunning)
         {
-             StatusText += " (请重新连接以生效)";
+            // 热重启：先停止，再用新节点启动
+            StatusText = $"正在切换节点：{ActiveNode.Name}，重启内核中...";
+            await StopAsync();
+            await StartAsync();
         }
     }
 
@@ -842,19 +867,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task StopAsync()
     {
-        if (_enableSystemProxy)
+        await _coreLock.WaitAsync();
+        try
         {
-            _systemProxy.DisableAndRestore();
-        }
+            if (_enableSystemProxy)
+            {
+                _systemProxy.DisableAndRestore();
+            }
 
-        if (_core is not null)
+            if (_core is not null)
+            {
+                await _core.StopAsync();
+                await _core.DisposeAsync();
+                _core = null;
+            }
+
+            StatusText = "已停止";
+        }
+        finally
         {
-            await _core.StopAsync();
-            await _core.DisposeAsync();
-            _core = null;
+            _coreLock.Release();
         }
-
-        StatusText = "已停止";
     }
 
     private void UpdateStatus(CoreRuntimeInfo info)

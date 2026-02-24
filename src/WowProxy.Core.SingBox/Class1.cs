@@ -369,7 +369,19 @@ public sealed class SingBoxConfigFactory
     {
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         var json = Build(settings);
-        await File.WriteAllTextAsync(configPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
+        
+        for (var i = 0; i < 5; i++)
+        {
+            try
+            {
+                await File.WriteAllTextAsync(configPath, json, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
+                return;
+            }
+            catch (IOException) when (i < 4)
+            {
+                await Task.Delay(100, cancellationToken);
+            }
+        }
     }
 }
 
