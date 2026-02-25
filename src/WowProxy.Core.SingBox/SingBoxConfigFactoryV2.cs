@@ -526,6 +526,10 @@ public sealed class SingBoxConfigFactoryV2
                 ? string.Empty
                 : settings.TunInterfaceName!.Trim();
 
+            var hasBypassProcesses = settings.BypassTunProcesses?
+                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Any(x => !string.IsNullOrWhiteSpace(x)) == true;
+
             list.Add(new
             {
                 type = "tun",
@@ -534,7 +538,7 @@ public sealed class SingBoxConfigFactoryV2
                 address = new[] { "172.19.0.1/30" },
                 mtu = 1500,
                 auto_route = true,
-                strict_route = false,
+                strict_route = !hasBypassProcesses,
                 route_exclude_address = BuildTunRouteExcludeAddress(selected),
                 stack = "system",
                 sniff = true,
