@@ -118,6 +118,14 @@ public sealed class SingBoxConfigFactoryV2
                 };
             }
 
+            var bypassRules = BuildBypassTunRules(settings);
+            if (bypassRules.Length > 0)
+            {
+                var allRules = route.ContainsKey("rules") ? ((object[])route["rules"]!).ToList() : new List<object>();
+                allRules.InsertRange(0, bypassRules);
+                route["rules"] = allRules.ToArray();
+            }
+
             return route;
         }
 
@@ -168,7 +176,46 @@ public sealed class SingBoxConfigFactoryV2
             cnRoute["rules"] = newRules.ToArray();
         }
 
+        var bypassRules2 = BuildBypassTunRules(settings);
+        if (bypassRules2.Length > 0)
+        {
+            var allRules = cnRoute.ContainsKey("rules") ? ((object[])cnRoute["rules"]!).ToList() : new List<object>();
+            allRules.InsertRange(0, bypassRules2);
+            cnRoute["rules"] = allRules.ToArray();
+        }
+
         return cnRoute;
+    }
+
+    /// <summary>
+    /// 为白名单进程生成路由规则：
+    /// 将这些进程被 TUN 捕获的所有流量直连（不经过代理节点）。
+    /// 通过 inbound=tun-in 限制，只对 TUN 捕获的流量生效；
+    /// 如果同时开启了系统代理，进程的 HTTP 请求会走 127.0.0.1:mixed_port（mixed-in），
+    /// 不受此规则影响，仍然正常走代理翻墙。
+    /// </summary>
+    private static object[] BuildBypassTunRules(AppSettings settings)
+    {
+        var bypassProcesses = settings.BypassTunProcesses?
+            .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+
+        if (bypassProcesses is null || bypassProcesses.Length == 0)
+        {
+            return Array.Empty<object>();
+        }
+
+        // 仅对 tun-in 入站的流量生效，系统代理的流量不受影响
+        return new object[]
+        {
+            new
+            {
+                process_name = bypassProcesses,
+                inbound = new[] { "tun-in" },
+                outbound = "direct"
+            }
+        };
     }
 
     private static object BuildTunDns()
@@ -484,11 +531,11 @@ public sealed class SingBoxConfigFactoryV2
                 tag = "tun-in",
                 interface_name = interfaceName,
                 address = new[] { "172.19.0.1/30" },
-                mtu = 9000,
+                mtu = 1500,
                 auto_route = true,
-                strict_route = true,
+                strict_route = false,
                 route_exclude_address = BuildTunRouteExcludeAddress(selected),
-                stack = "mixed",
+                stack = "system",
                 sniff = true,
                 sniff_override_destination = true,
             });

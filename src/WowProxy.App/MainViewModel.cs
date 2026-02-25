@@ -74,11 +74,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _enableTun = settings.EnableTun;
         _statusText = "未启动";
 
-        if (_enableTun)
-        {
-            _enableSystemProxy = false;
-        }
-
         ConnectCommand = new AsyncRelayCommand(_ => ToggleConnectAsync());
         UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
         ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
@@ -139,14 +134,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             _enableSystemProxy = value;
-
-            // 如果启用了系统代理，且当前是 TUN 模式，则自动关闭 TUN 模式
-            if (_enableSystemProxy && _enableTun)
-            {
-                _enableTun = false;
-                OnPropertyChanged(nameof(EnableTun));
-            }
-
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
@@ -166,14 +153,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             _enableTun = value;
-
-            // 如果启用了 TUN 模式，强制关闭系统代理
-            if (_enableTun && _enableSystemProxy)
-            {
-                _enableSystemProxy = false;
-                OnPropertyChanged(nameof(EnableSystemProxy));
-            }
-
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
@@ -366,21 +345,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         ClashApiSecret = secret;
 
-        var enableSystemProxy = !EnableTun && EnableSystemProxy;
-
         _settings = new AppSettings(
             SingBoxPath: SingBoxPath,
             MixedPort: mixedPort,
             EnableClashApi: EnableClashApi,
             ClashApiPort: clashApiPort,
             ClashApiSecret: secret,
-            EnableSystemProxy: enableSystemProxy,
+            EnableSystemProxy: EnableSystemProxy,
             SubscriptionUrl: SubscriptionUrl,
             Nodes: _nodes.Select(n => n.Node).ToList(),
             SelectedNodeId: ActiveNode?.Id,
             LogLevel: LogLevel,
             EnableDirectCn: EnableDirectCn,
-            EnableTun: EnableTun
+            EnableTun: EnableTun,
+            TunInterfaceName: null,
+            BypassTunProcesses: _settingsViewModel.BypassTunProcesses
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -443,7 +422,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (core.RuntimeInfo.State == CoreState.Running)
             {
                 _core = core;
-                if (enableSystemProxy)
+                if (EnableSystemProxy)
                 {
                     _systemProxy.EnableGlobalProxy($"127.0.0.1:{mixedPort}");
                 }
@@ -812,6 +791,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 EnableDirectCn = EnableDirectCn,
                 EnableTun = EnableTun,
                 EnableSystemProxy = EnableSystemProxy,
+                BypassTunProcesses = _settingsViewModel.BypassTunProcesses,
             };
             await _settingsStore.SaveAsync(_settings);
         }

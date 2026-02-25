@@ -18,6 +18,7 @@ public class SettingsViewModel : INotifyPropertyChanged
     private string? _clashApiSecret;
     private string _logLevel;
     private bool _enableDirectCn;
+    private string _bypassTunProcesses;
 
     public SettingsViewModel(MainViewModel mainViewModel, AppSettings settings)
     {
@@ -29,6 +30,7 @@ public class SettingsViewModel : INotifyPropertyChanged
         _clashApiSecret = settings.ClashApiSecret;
         _logLevel = string.IsNullOrWhiteSpace(settings.LogLevel) ? "info" : settings.LogLevel;
         _enableDirectCn = settings.EnableDirectCn;
+        _bypassTunProcesses = settings.BypassTunProcesses ?? string.Empty;
 
         BrowseSingBoxCommand = new RelayCommand(_ => BrowseSingBox());
     }
@@ -114,6 +116,18 @@ public class SettingsViewModel : INotifyPropertyChanged
         {
             if (_enableDirectCn == value) return;
             _enableDirectCn = value;
+            OnPropertyChanged();
+            _mainViewModel.NotifySettingsChanged();
+        }
+    }
+
+    public string BypassTunProcesses
+    {
+        get => _bypassTunProcesses;
+        set
+        {
+            if (_bypassTunProcesses == value) return;
+            _bypassTunProcesses = value;
             OnPropertyChanged();
             _mainViewModel.NotifySettingsChanged();
         }

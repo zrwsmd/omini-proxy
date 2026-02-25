@@ -18,7 +18,8 @@ public sealed record AppSettings(
     string LogLevel = "info",
     bool EnableDirectCn = true,
     bool EnableTun = false,
-    string? TunInterfaceName = null
+    string? TunInterfaceName = null,
+    string? BypassTunProcesses = null
 )
 {
     public static AppSettings Default =>
@@ -35,6 +36,7 @@ public sealed record AppSettings(
             LogLevel: "info",
             EnableDirectCn: true,
             EnableTun: false,
-            TunInterfaceName: null
+            TunInterfaceName: null,
+            BypassTunProcesses: null
         );
 }
