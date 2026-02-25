@@ -137,6 +137,7 @@ public sealed class SingBoxConfigFactoryV2
                 new { domain_suffix = new[] { ".cn" }, outbound = "direct" },
                 new { rule_set = "geosite-cn", outbound = "direct" },
                 new { rule_set = "geoip-cn", outbound = "direct" },
+                new { domain_suffix = new[] { "orchids.app", "posthog.com", "supabase.co" }, outbound = "direct" },
             },
             ["rule_set"] = new object[]
             {
