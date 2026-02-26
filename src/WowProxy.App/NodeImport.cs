@@ -4,12 +4,14 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using WowProxy.Domain;
+using YamlDotNet.RepresentationModel;
 
 namespace WowProxy.App;
 
 internal static class NodeImport
 {
-    internal static async Task<(List<ProxyNode> Nodes, List<string> Errors)> LoadFromSubscriptionAsync(string url, CancellationToken cancellationToken)
+    internal static async Task<(List<ProxyNode> Nodes, List<string> Errors)> LoadFromSubscriptionAsync(
+        string url, CancellationToken cancellationToken, string? groupName = null)
     {
         using var http = new HttpClient
         {
@@ -17,17 +19,54 @@ internal static class NodeImport
         };
 
         var text = await http.GetStringAsync(url, cancellationToken);
-        return ParseText(text);
+        var (nodes, errors, _) = ParseText(text);
+
+        // Tag nodes with their subscription group
+        if (!string.IsNullOrWhiteSpace(groupName))
+        {
+            for (var i = 0; i < nodes.Count; i++)
+            {
+                nodes[i] = nodes[i] with { SubscriptionGroup = groupName };
+            }
+        }
+
+        return (nodes, errors);
     }
 
-    internal static (List<ProxyNode> Nodes, List<string> Errors) ParseText(string text)
+    internal static (List<ProxyNode> Nodes, List<string> Errors, bool IsClash) ParseText(string text)
     {
+        // 1. Try Clash YAML first (proxies: section)
+        if (LooksLikeClashYaml(text))
+        {
+            var (clashNodes, clashErrors) = ParseClashYaml(text);
+            if (clashNodes.Count > 0)
+            {
+                return (DeduplicateAndSort(clashNodes), clashErrors, true);
+            }
+        }
+
+        // 2. Split into lines; if none look like proxy URIs, try base64-decode first
         var lines = SplitLines(text);
-        if (lines.Count == 0)
+        var hasUriLines = lines.Any(l => l.TrimStart().StartsWith("vmess://", StringComparison.OrdinalIgnoreCase)
+                                      || l.TrimStart().StartsWith("vless://", StringComparison.OrdinalIgnoreCase)
+                                      || l.TrimStart().StartsWith("trojan://", StringComparison.OrdinalIgnoreCase)
+                                      || l.TrimStart().StartsWith("ss://", StringComparison.OrdinalIgnoreCase));
+
+        if (!hasUriLines)
         {
             var decoded = TryDecodeBase64ToText(text);
             if (decoded is not null)
             {
+                // The decoded content might also be Clash YAML
+                if (LooksLikeClashYaml(decoded))
+                {
+                    var (clashNodes, clashErrors) = ParseClashYaml(decoded);
+                    if (clashNodes.Count > 0 || clashErrors.Count > 0)
+                    {
+                        return (DeduplicateAndSort(clashNodes), clashErrors, true);
+                    }
+                }
+
                 lines = SplitLines(decoded);
             }
         }
@@ -53,13 +92,460 @@ internal static class NodeImport
             }
         }
 
-        nodes = nodes
+        return (DeduplicateAndSort(nodes), errors, false);
+    }
+
+    private static bool LooksLikeClashYaml(string text)
+    {
+        // A Clash subscription typically has "proxies:" near the top
+        var slice = text.Length > 4096 ? text[..4096] : text;
+        return slice.Contains("proxies:", StringComparison.Ordinal)
+            || slice.Contains("Proxies:", StringComparison.Ordinal);
+    }
+
+    private static List<ProxyNode> DeduplicateAndSort(List<ProxyNode> nodes)
+    {
+        return nodes
             .GroupBy(n => n.Id, StringComparer.OrdinalIgnoreCase)
             .Select(g => g.First())
             .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    // ── Clash YAML Parser ────────────────────────────────────────────────────
+
+    private static (List<ProxyNode> Nodes, List<string> Errors) ParseClashYaml(string yaml)
+    {
+        var nodes = new List<ProxyNode>();
+        var errors = new List<string>();
+
+        try
+        {
+            var stream = new YamlStream();
+            stream.Load(new StringReader(yaml));
+
+            if (stream.Documents.Count == 0)
+            {
+                return (nodes, errors);
+            }
+
+            var root = stream.Documents[0].RootNode as YamlMappingNode;
+            if (root is null)
+            {
+                return (nodes, errors);
+            }
+
+            // Support both "proxies:" (Clash Meta / Clash.Premium) and legacy "Proxy:"
+            YamlNode? proxiesNode = null;
+            foreach (var entry in root.Children)
+            {
+                var key = (entry.Key as YamlScalarNode)?.Value ?? string.Empty;
+                if (string.Equals(key, "proxies", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(key, "Proxy", StringComparison.OrdinalIgnoreCase))
+                {
+                    proxiesNode = entry.Value;
+                    break;
+                }
+            }
+
+            if (proxiesNode is not YamlSequenceNode proxiesList)
+            {
+                errors.Add("Clash YAML：未找到 proxies 列表");
+                return (nodes, errors);
+            }
+
+            foreach (var item in proxiesList.Children)
+            {
+                if (item is not YamlMappingNode proxyMap)
+                {
+                    continue;
+                }
+
+                if (TryParseClashProxy(proxyMap, out var node, out var err))
+                {
+                    nodes.Add(node!);
+                }
+                else if (!string.IsNullOrWhiteSpace(err))
+                {
+                    errors.Add(err!);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"Clash YAML 解析失败：{ex.Message}");
+        }
 
         return (nodes, errors);
+    }
+
+    private static bool TryParseClashProxy(YamlMappingNode map, out ProxyNode? node, out string? error)
+    {
+        node = null;
+        error = null;
+
+        var type = GetYamlString(map, "type")?.ToLowerInvariant() ?? string.Empty;
+        var name = GetYamlString(map, "name") ?? string.Empty;
+        var server = GetYamlString(map, "server") ?? string.Empty;
+        var portText = GetYamlString(map, "port") ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(server) || !int.TryParse(portText, out var port) || port is < 1 or > 65535)
+        {
+            error = $"Clash 节点 \"{name}\"：server/port 无效";
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = $"{server}:{port}";
+        }
+
+        switch (type)
+        {
+            case "ss":
+            case "shadowsocks":
+                return TryParseClashShadowsocks(map, name, server, port, out node, out error);
+            case "vmess":
+                return TryParseClashVmess(map, name, server, port, out node, out error);
+            case "trojan":
+                return TryParseClashTrojan(map, name, server, port, out node, out error);
+            case "vless":
+                return TryParseClashVless(map, name, server, port, out node, out error);
+            default:
+                // Silently skip unsupported types (hysteria, tuic, etc.)
+                return false;
+        }
+    }
+
+    private static bool TryParseClashShadowsocks(YamlMappingNode map, string name, string server, int port,
+        out ProxyNode? node, out string? error)
+    {
+        var password = GetYamlString(map, "password") ?? string.Empty;
+        var cipher = GetYamlString(map, "cipher") ?? GetYamlString(map, "encrypt-method") ?? "aes-256-gcm";
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            node = null;
+            error = $"Clash SS 节点 \"{name}\"：缺少 password";
+            return false;
+        }
+
+        var raw = $"ss://clash-yaml#{name}@{server}:{port}?cipher={cipher}&password={Uri.EscapeDataString(password)}";
+
+        node = new ProxyNode(
+            Id: ProxyNode.IdFromRaw($"clash:ss:{server}:{port}:{cipher}:{password}:{name}"),
+            Type: ProxyNodeType.Shadowsocks,
+            Name: name,
+            Server: server,
+            Port: port,
+            Password: password,
+            Method: cipher,
+            Raw: raw
+        );
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryParseClashVmess(YamlMappingNode map, string name, string server, int port,
+        out ProxyNode? node, out string? error)
+    {
+        var uuid = GetYamlString(map, "uuid") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(uuid))
+        {
+            node = null;
+            error = $"Clash VMess 节点 \"{name}\"：缺少 uuid";
+            return false;
+        }
+
+        var alterIdText = GetYamlString(map, "alterId") ?? GetYamlString(map, "alter_id") ?? "0";
+        int.TryParse(alterIdText, out var alterId);
+
+        var cipher = GetYamlString(map, "cipher") ?? "auto";
+
+        var tls = string.Equals(GetYamlString(map, "tls"), "true", StringComparison.OrdinalIgnoreCase)
+                  || GetYamlBool(map, "tls");
+        var sni = GetYamlString(map, "servername") ?? GetYamlString(map, "sni");
+        var skipCertVerify = GetYamlBool(map, "skip-cert-verify");
+        var fp = GetYamlString(map, "client-fingerprint");
+
+        // network / transport
+        var network = GetYamlString(map, "network") ?? string.Empty;
+        string? transportType = network.ToLowerInvariant() switch
+        {
+            "ws" => "ws",
+            "grpc" => "grpc",
+            "h2" => "http",
+            "http" => "http",
+            "tcp" => null,
+            _ => null,
+        };
+
+        string? wsHost = null;
+        string? wsPath = null;
+        if (string.Equals(network, "ws", StringComparison.OrdinalIgnoreCase))
+        {
+            var wsOpts = GetYamlMapping(map, "ws-opts") ?? GetYamlMapping(map, "ws-path");
+            if (wsOpts is not null)
+            {
+                wsPath = GetYamlString(wsOpts, "path");
+                var headersNode = GetYamlMapping(wsOpts, "headers");
+                if (headersNode is not null)
+                {
+                    wsHost = GetYamlString(headersNode, "Host") ?? GetYamlString(headersNode, "host");
+                }
+            }
+        }
+
+        var alpnList = GetYamlStringList(map, "alpn");
+        var alpn = alpnList.Count > 0 ? string.Join(",", alpnList) : null;
+
+        var raw = $"vmess://clash-yaml:{name}@{server}:{port}";
+
+        node = new ProxyNode(
+            Id: ProxyNode.IdFromRaw($"clash:vmess:{server}:{port}:{uuid}:{alterId}:{name}"),
+            Type: ProxyNodeType.Vmess,
+            Name: name,
+            Server: server,
+            Port: port,
+            Uuid: uuid,
+            AlterId: alterId,
+            Security: cipher,
+            TlsEnabled: tls,
+            TlsServerName: string.IsNullOrWhiteSpace(sni) ? null : sni,
+            TlsInsecure: skipCertVerify,
+            TlsAlpn: alpn,
+            UtlsFingerprint: string.IsNullOrWhiteSpace(fp) ? null : fp,
+            TransportType: transportType,
+            TransportHost: string.IsNullOrWhiteSpace(wsHost) ? null : wsHost,
+            TransportPath: string.IsNullOrWhiteSpace(wsPath) ? null : NormalizePath(wsPath),
+            Raw: raw
+        );
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryParseClashTrojan(YamlMappingNode map, string name, string server, int port,
+        out ProxyNode? node, out string? error)
+    {
+        var password = GetYamlString(map, "password") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            node = null;
+            error = $"Clash Trojan 节点 \"{name}\"：缺少 password";
+            return false;
+        }
+
+        var sni = GetYamlString(map, "sni") ?? GetYamlString(map, "servername");
+        var skipCertVerify = GetYamlBool(map, "skip-cert-verify");
+        var fp = GetYamlString(map, "client-fingerprint");
+        var alpnList = GetYamlStringList(map, "alpn");
+        var alpn = alpnList.Count > 0 ? string.Join(",", alpnList) : null;
+
+        var network = GetYamlString(map, "network") ?? string.Empty;
+        string? transportType = network.ToLowerInvariant() switch
+        {
+            "ws" => "ws",
+            "grpc" => "grpc",
+            _ => null,
+        };
+
+        string? wsHost = null;
+        string? wsPath = null;
+        if (string.Equals(network, "ws", StringComparison.OrdinalIgnoreCase))
+        {
+            var wsOpts = GetYamlMapping(map, "ws-opts");
+            if (wsOpts is not null)
+            {
+                wsPath = GetYamlString(wsOpts, "path");
+                var headersNode = GetYamlMapping(wsOpts, "headers");
+                if (headersNode is not null)
+                {
+                    wsHost = GetYamlString(headersNode, "Host") ?? GetYamlString(headersNode, "host");
+                }
+            }
+        }
+
+        var raw = $"trojan://clash-yaml:{name}@{server}:{port}";
+
+        node = new ProxyNode(
+            Id: ProxyNode.IdFromRaw($"clash:trojan:{server}:{port}:{password}:{name}"),
+            Type: ProxyNodeType.Trojan,
+            Name: name,
+            Server: server,
+            Port: port,
+            Password: password,
+            TlsEnabled: true,
+            TlsServerName: string.IsNullOrWhiteSpace(sni) ? null : sni,
+            TlsInsecure: skipCertVerify,
+            TlsAlpn: alpn,
+            UtlsFingerprint: string.IsNullOrWhiteSpace(fp) ? null : fp,
+            TransportType: transportType,
+            TransportHost: string.IsNullOrWhiteSpace(wsHost) ? null : wsHost,
+            TransportPath: string.IsNullOrWhiteSpace(wsPath) ? null : NormalizePath(wsPath),
+            Raw: raw
+        );
+
+        error = null;
+        return true;
+    }
+
+    private static bool TryParseClashVless(YamlMappingNode map, string name, string server, int port,
+        out ProxyNode? node, out string? error)
+    {
+        var uuid = GetYamlString(map, "uuid") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(uuid))
+        {
+            node = null;
+            error = $"Clash VLESS 节点 \"{name}\"：缺少 uuid";
+            return false;
+        }
+
+        var tls = string.Equals(GetYamlString(map, "tls"), "true", StringComparison.OrdinalIgnoreCase)
+                  || GetYamlBool(map, "tls");
+        var security = GetYamlString(map, "security");
+        var isReality = string.Equals(security, "reality", StringComparison.OrdinalIgnoreCase);
+        if (isReality)
+        {
+            tls = true;
+        }
+
+        var sni = GetYamlString(map, "servername") ?? GetYamlString(map, "sni");
+        var skipCertVerify = GetYamlBool(map, "skip-cert-verify");
+        var fp = GetYamlString(map, "client-fingerprint");
+        var flow = GetYamlString(map, "flow");
+        var alpnList = GetYamlStringList(map, "alpn");
+        var alpn = alpnList.Count > 0 ? string.Join(",", alpnList) : null;
+
+        // Reality options
+        string? realityPbk = null;
+        string? realitySid = null;
+        var realityOpts = GetYamlMapping(map, "reality-opts");
+        if (realityOpts is not null)
+        {
+            realityPbk = GetYamlString(realityOpts, "public-key");
+            realitySid = GetYamlString(realityOpts, "short-id");
+        }
+
+        var network = GetYamlString(map, "network") ?? string.Empty;
+        string? transportType = network.ToLowerInvariant() switch
+        {
+            "ws" => "ws",
+            "grpc" => "grpc",
+            "h2" => "http",
+            "http" => "http",
+            "tcp" => null,
+            _ => null,
+        };
+
+        string? wsHost = null;
+        string? wsPath = null;
+        if (string.Equals(network, "ws", StringComparison.OrdinalIgnoreCase))
+        {
+            var wsOpts = GetYamlMapping(map, "ws-opts");
+            if (wsOpts is not null)
+            {
+                wsPath = GetYamlString(wsOpts, "path");
+                var headersNode = GetYamlMapping(wsOpts, "headers");
+                if (headersNode is not null)
+                {
+                    wsHost = GetYamlString(headersNode, "Host") ?? GetYamlString(headersNode, "host");
+                }
+            }
+        }
+
+        var raw = $"vless://clash-yaml:{name}@{server}:{port}";
+
+        node = new ProxyNode(
+            Id: ProxyNode.IdFromRaw($"clash:vless:{server}:{port}:{uuid}:{name}"),
+            Type: ProxyNodeType.Vless,
+            Name: name,
+            Server: server,
+            Port: port,
+            Uuid: uuid,
+            Security: isReality ? "reality" : (tls ? "tls" : null),
+            TlsEnabled: tls,
+            TlsServerName: string.IsNullOrWhiteSpace(sni) ? null : sni,
+            TlsInsecure: skipCertVerify,
+            TlsAlpn: alpn,
+            UtlsFingerprint: string.IsNullOrWhiteSpace(fp) ? null : fp,
+            RealityPublicKey: string.IsNullOrWhiteSpace(realityPbk) ? null : realityPbk,
+            RealityShortId: string.IsNullOrWhiteSpace(realitySid) ? null : realitySid,
+            Flow: string.IsNullOrWhiteSpace(flow) ? null : flow,
+            TransportType: transportType,
+            TransportHost: string.IsNullOrWhiteSpace(wsHost) ? null : wsHost,
+            TransportPath: string.IsNullOrWhiteSpace(wsPath) ? null : NormalizePath(wsPath),
+            Raw: raw
+        );
+
+        error = null;
+        return true;
+    }
+
+    // ── YAML helpers ─────────────────────────────────────────────────────────
+
+    private static string? GetYamlString(YamlMappingNode map, string key)
+    {
+        foreach (var entry in map.Children)
+        {
+            if (entry.Key is YamlScalarNode k && string.Equals(k.Value, key, StringComparison.OrdinalIgnoreCase))
+            {
+                return (entry.Value as YamlScalarNode)?.Value;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool GetYamlBool(YamlMappingNode map, string key)
+    {
+        var val = GetYamlString(map, key);
+        return string.Equals(val, "true", StringComparison.OrdinalIgnoreCase)
+            || val == "1";
+    }
+
+    private static YamlMappingNode? GetYamlMapping(YamlMappingNode map, string key)
+    {
+        foreach (var entry in map.Children)
+        {
+            if (entry.Key is YamlScalarNode k && string.Equals(k.Value, key, StringComparison.OrdinalIgnoreCase))
+            {
+                return entry.Value as YamlMappingNode;
+            }
+        }
+
+        return null;
+    }
+
+    private static List<string> GetYamlStringList(YamlMappingNode map, string key)
+    {
+        var result = new List<string>();
+        foreach (var entry in map.Children)
+        {
+            if (entry.Key is YamlScalarNode k && string.Equals(k.Value, key, StringComparison.OrdinalIgnoreCase))
+            {
+                if (entry.Value is YamlSequenceNode seq)
+                {
+                    foreach (var item in seq.Children)
+                    {
+                        if (item is YamlScalarNode s && !string.IsNullOrWhiteSpace(s.Value))
+                        {
+                            result.Add(s.Value!);
+                        }
+                    }
+                }
+                else if (entry.Value is YamlScalarNode scalar && !string.IsNullOrWhiteSpace(scalar.Value))
+                {
+                    // Single value written as scalar
+                    result.Add(scalar.Value!);
+                }
+
+                break;
+            }
+        }
+
+        return result;
     }
 
     private static List<string> SplitLines(string text)
@@ -318,7 +804,8 @@ internal static class NodeImport
 
     private static bool TryParseVmess(string raw, out ProxyNode node, out string error)
     {
-        var payload = raw["vmess://".Length..].Trim();
+        // Strip all whitespace (newlines, spaces) from base64 payload before decoding
+        var payload = new string(raw["vmess://".Length..].Where(c => !char.IsWhiteSpace(c)).ToArray());
         if (!TryFromBase64(payload, out var bytes) && !TryFromBase64(ToBase64Standard(payload), out bytes))
         {
             node = default!;

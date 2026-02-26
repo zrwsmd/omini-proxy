@@ -59,48 +59,100 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- 左侧：节点列表 -->
-                    <Grid Grid.Column="0" Margin="0,0,12,0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
+                        <Grid Grid.Column="0" Margin="0,0,12,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
 
-                        <!-- 订阅管理 -->
-                        <Grid Grid.Row="0" Margin="0,0,0,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="订阅 URL" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBox Grid.Column="1" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Grid.Column="2" Content="更新" Margin="8,0,0,0" Padding="12,4" Command="{Binding UpdateSubscriptionCommand}" />
-                        </Grid>
+                            <!-- 订阅管理 -->
+                            <Grid Grid.Row="0" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="订阅 URL" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBox Grid.Column="1" Text="{Binding SubscriptionUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="2" Content="更新" Margin="8,0,0,0" Padding="12,4" Command="{Binding UpdateSubscriptionCommand}" />
+                            </Grid>
 
-                        <!-- 导入链接 -->
-                        <Grid Grid.Row="1" Margin="0,0,0,12">
-                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="快速导入" VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <TextBox Grid.Column="1" Text="{Binding NodeImportText, UpdateSourceTrigger=PropertyChanged}" Height="26" />
-                            <Button Grid.Column="2" Content="导入" Margin="8,0,0,0" Padding="12,4" Command="{Binding ImportLinksCommand}" />
-                        </Grid>
+                            <!-- 导入链接 -->
+                            <Grid Grid.Row="1" Margin="0,0,0,8">
+                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="快速导入" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                <TextBox Grid.Column="1" Text="{Binding NodeImportText, UpdateSourceTrigger=PropertyChanged}" Height="26" />
+                                <Button Grid.Column="2" Content="导入" Margin="8,0,0,0" Padding="12,4" Command="{Binding ImportLinksCommand}" />
+                            </Grid>
 
-                        <!-- 节点表格 -->
-                        <DataGrid Grid.Row="2"
-                                  ItemsSource="{Binding Nodes}"
-                                  SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  SelectionMode="Single"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
-                                  BorderThickness="1"
-                                  BorderBrush="#ABADB3">
+                            <!-- 分组 Tab 栏 -->
+                            <ListBox Grid.Row="2"
+                                     ItemsSource="{Binding NodeGroups}"
+                                     SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                                     BorderThickness="0,0,0,1"
+                                     BorderBrush="#DDD"
+                                     Background="Transparent"
+                                     Margin="0,0,0,4"
+                                     Padding="0">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="Padding" Value="12,6" />
+                                        <Setter Property="Margin" Value="0,0,2,0" />
+                                        <Setter Property="Background" Value="#F0F0F0" />
+                                        <Setter Property="BorderBrush" Value="#CCC" />
+                                        <Setter Property="BorderThickness" Value="1,1,1,0" />
+                                        <Setter Property="Cursor" Value="Hand" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <Border Background="{TemplateBinding Background}"
+                                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                                            Padding="{TemplateBinding Padding}"
+                                                            CornerRadius="4,4,0,0">
+                                                        <ContentPresenter />
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsSelected" Value="True">
+                                                            <Setter Property="Background" Value="White" />
+                                                            <Setter Property="BorderBrush" Value="#888" />
+                                                            <Setter Property="FontWeight" Value="Bold" />
+                                                        </Trigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Background" Value="#E8E8E8" />
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                            </ListBox>
+
+                            <!-- 节点表格 -->
+                          <DataGrid Grid.Row="3"
+                                    x:Name="NodeDataGrid"
+                                    ItemsSource="{Binding FilteredNodes}"
+                                SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                                AutoGenerateColumns="False"
+                                IsReadOnly="True"
+                                SelectionMode="Extended"
+                                SelectionChanged="NodeDataGrid_SelectionChanged"
+                                HeadersVisibility="Column"
+                                GridLinesVisibility="Horizontal"
+                                BorderThickness="1"
+                                BorderBrush="#ABADB3">
                             <DataGrid.Resources>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#808080"/>
                                 <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="White"/>
@@ -114,7 +166,7 @@
                                     <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
                                     <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
                                     <Separator />
-                                    <MenuItem Header="移除节点" Command="{Binding RemoveNodeCommand}" />
+                                    <MenuItem Header="移除所选节点" Command="{Binding RemoveSelectedNodesCommand}" />
                                 </ContextMenu>
                             </DataGrid.ContextMenu>
                             <DataGrid.RowStyle>
@@ -178,7 +230,7 @@
                             <Button Content="{Binding ConnectButtonText}" Height="40" FontSize="16" FontWeight="Bold" Command="{Binding ConnectCommand}" Margin="0,0,0,12" />
                             <Button Content="测试延迟" Margin="0,0,0,8" Padding="0,6" Command="{Binding TestLatencyCommand}" />
                             <Button Content="测试速度" Margin="0,0,0,8" Padding="0,6" Command="{Binding TestSpeedCommand}" />
-                            <Button Content="移除节点" Margin="0,0,0,8" Padding="0,6" Command="{Binding RemoveNodeCommand}" />
+                            <Button Content="移除所选节点" Margin="0,0,0,8" Padding="0,6" Command="{Binding RemoveSelectedNodesCommand}" />
                         </StackPanel>
                         
                         <GroupBox Header="运行日志" Grid.Row="1" Margin="0,12,0,0">

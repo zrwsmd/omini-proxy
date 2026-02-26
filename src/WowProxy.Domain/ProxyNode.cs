@@ -33,7 +33,8 @@ public sealed record ProxyNode(
     string? TransportType = null,
     string? TransportHost = null,
     string? TransportPath = null,
-    string Raw = ""
+    string Raw = "",
+    string? SubscriptionGroup = null
 )
 {
     public static string IdFromRaw(string raw)

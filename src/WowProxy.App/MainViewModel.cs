@@ -39,10 +39,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string? _subscriptionUrl;
     private string _nodeImportText;
     private readonly ObservableCollection<ProxyNodeModel> _nodes;
+    private ObservableCollection<ProxyNodeModel> _filteredNodes;
     private ProxyNodeModel? _selectedNode;
     private ProxyNodeModel? _activeNode;
+    private readonly ObservableCollection<ProxyNodeModel> _selectedNodes = new();
     private string _connectButtonText;
     private bool _enableTun;
+    private string _selectedGroup = "全部";
+    private readonly ObservableCollection<string> _nodeGroups = new() { "全部" };
+    private readonly ObservableCollection<SubscriptionEntry> _subscriptionGroups = new();
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
     {
@@ -55,20 +60,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _nodeImportText = string.Empty;
         _nodes = new ObservableCollection<ProxyNodeModel>((settings.Nodes ?? new List<ProxyNode>())
             .Select(n => new ProxyNodeModel(n)));
-        
+        _filteredNodes = new ObservableCollection<ProxyNodeModel>(_nodes);
+
+        // Restore subscription groups
+        if (settings.SubscriptionGroups != null)
+        {
+            foreach (var entry in settings.SubscriptionGroups)
+            {
+                _subscriptionGroups.Add(entry);
+                if (!_nodeGroups.Contains(entry.GroupName))
+                    _nodeGroups.Add(entry.GroupName);
+            }
+        }
+
         // Restore Active Node from settings
         if (!string.IsNullOrWhiteSpace(settings.SelectedNodeId))
         {
             var activeNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase));
             if (activeNode != null)
             {
-                // 先不要直接赋值 _activeNode，通过 ActiveNode 属性来触发 IsActive 的更新
                 ActiveNode = activeNode;
             }
         }
-        
+
         // Select the active node by default if available, otherwise the first one
-        _selectedNode = _activeNode ?? _nodes.FirstOrDefault();
+        _selectedNode = _activeNode ?? _filteredNodes.FirstOrDefault();
 
         _connectButtonText = "连接";
         _enableTun = settings.EnableTun;
@@ -78,6 +94,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         UpdateSubscriptionCommand = new AsyncRelayCommand(_ => UpdateSubscriptionAsync());
         ImportLinksCommand = new AsyncRelayCommand(_ => ImportLinksAsync());
         RemoveNodeCommand = new RelayCommand(_ => RemoveNode());
+        RemoveSelectedNodesCommand = new RelayCommand(_ => RemoveSelectedNodes());
         SetActiveNodeCommand = new AsyncRelayCommand(_ => SetActiveNodeAsync());
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
         TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
@@ -96,16 +113,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
     public AsyncRelayCommand ImportLinksCommand { get; }
     public RelayCommand RemoveNodeCommand { get; }
+    public RelayCommand RemoveSelectedNodesCommand { get; }
     public AsyncRelayCommand SetActiveNodeCommand { get; }
     public RelayCommand ClearNodesCommand { get; }
     public AsyncRelayCommand TestLatencyCommand { get; }
     public AsyncRelayCommand TestSpeedCommand { get; }
-    
-    // 代理原有的属性访问到 SettingsViewModel，或者直接在 StartAsync 中使用 SettingsViewModel 的值
+
     public string? SingBoxPath => _settingsViewModel.SingBoxPath;
     public bool EnableClashApi => _settingsViewModel.EnableClashApi;
-    public string? ClashApiSecret 
-    { 
+    public string? ClashApiSecret
+    {
         get => _settingsViewModel.ClashApiSecret;
         set => _settingsViewModel.ClashApiSecret = value;
     }
@@ -128,11 +145,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _enableSystemProxy;
         set
         {
-            if (_enableSystemProxy == value)
-            {
-                return;
-            }
-
+            if (_enableSystemProxy == value) return;
             _enableSystemProxy = value;
             OnPropertyChanged();
             _ = PersistSelectionAsync();
@@ -147,11 +160,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _enableTun;
         set
         {
-            if (_enableTun == value)
-            {
-                return;
-            }
-
+            if (_enableTun == value) return;
             _enableTun = value;
             OnPropertyChanged();
             _ = PersistSelectionAsync();
@@ -163,11 +172,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _subscriptionUrl;
         set
         {
-            if (_subscriptionUrl == value)
-            {
-                return;
-            }
-
+            if (_subscriptionUrl == value) return;
             _subscriptionUrl = value;
             OnPropertyChanged();
         }
@@ -178,17 +183,47 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _nodeImportText;
         set
         {
-            if (_nodeImportText == value)
-            {
-                return;
-            }
-
+            if (_nodeImportText == value) return;
             _nodeImportText = value;
             OnPropertyChanged();
         }
     }
 
+    // All nodes (backing store)
     public ObservableCollection<ProxyNodeModel> Nodes => _nodes;
+
+    // Selected nodes (synced from DataGrid.SelectionChanged in code-behind)
+    public ObservableCollection<ProxyNodeModel> SelectedNodes => _selectedNodes;
+
+    // Filtered nodes (DataGrid binds to this)
+    public ObservableCollection<ProxyNodeModel> FilteredNodes
+    {
+        get => _filteredNodes;
+        private set
+        {
+            _filteredNodes = value;
+            OnPropertyChanged();
+        }
+    }
+
+    // Group tab names: "全部" + each subscription group name
+    public ObservableCollection<string> NodeGroups => _nodeGroups;
+
+    // Currently selected group tab
+    public string SelectedGroup
+    {
+        get => _selectedGroup;
+        set
+        {
+            var newVal = value ?? "全部";
+            if (_selectedGroup == newVal) return;
+            _selectedGroup = newVal;
+            OnPropertyChanged();
+            RebuildFilteredNodes();
+            // Restore selection to active node if visible, else first
+            SelectedNode = _filteredNodes.FirstOrDefault(n => n.IsActive) ?? _filteredNodes.FirstOrDefault();
+        }
+    }
 
     public ProxyNodeModel? SelectedNode
     {
@@ -196,13 +231,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         set
         {
             if (ReferenceEquals(_selectedNode, value) || (_selectedNode is not null && value is not null && _selectedNode.Id == value.Id))
-            {
                 return;
-            }
-
             _selectedNode = value;
             OnPropertyChanged();
-            // Selection change no longer triggers persistence
         }
     }
 
@@ -211,23 +242,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _activeNode;
         private set
         {
-            if (ReferenceEquals(_activeNode, value))
-            {
-                return;
-            }
-
-            if (_activeNode != null)
-            {
-                _activeNode.IsActive = false;
-            }
-
+            if (ReferenceEquals(_activeNode, value)) return;
+            if (_activeNode != null) _activeNode.IsActive = false;
             _activeNode = value;
-
-            if (_activeNode != null)
-            {
-                _activeNode.IsActive = true;
-            }
-
+            if (_activeNode != null) _activeNode.IsActive = true;
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
@@ -238,11 +256,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _statusText;
         private set
         {
-            if (_statusText == value)
-            {
-                return;
-            }
-
+            if (_statusText == value) return;
             _statusText = value;
             OnPropertyChanged();
         }
@@ -253,11 +267,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => _connectButtonText;
         private set
         {
-            if (_connectButtonText == value)
-            {
-                return;
-            }
-
+            if (_connectButtonText == value) return;
             _connectButtonText = value;
             OnPropertyChanged();
         }
@@ -281,10 +291,45 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _systemProxy.RestoreFromSnapshotIfAny();
     }
 
-    private void BrowseSingBox()
+    // ── Group helpers ─────────────────────────────────────────────────────────
+
+    private void RebuildFilteredNodes()
     {
-        // Moved to SettingsViewModel
+        var filtered = _selectedGroup == "全部"
+            ? _nodes.ToList()
+            : _nodes.Where(n => string.Equals(n.Node.SubscriptionGroup, _selectedGroup, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        _filteredNodes.Clear();
+        foreach (var n in filtered)
+            _filteredNodes.Add(n);
     }
+
+    private void RebuildNodeGroups()
+    {
+        // Rebuild _nodeGroups from current subscription groups
+        var groups = _nodes
+            .Select(n => n.Node.SubscriptionGroup)
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g)
+            .ToList();
+
+        // Remove tabs that no longer exist (except "全部")
+        for (var i = _nodeGroups.Count - 1; i >= 1; i--)
+        {
+            if (!groups.Contains(_nodeGroups[i], StringComparer.OrdinalIgnoreCase))
+                _nodeGroups.RemoveAt(i);
+        }
+
+        // Add new tabs
+        foreach (var g in groups)
+        {
+            if (!_nodeGroups.Contains(g!, StringComparer.OrdinalIgnoreCase))
+                _nodeGroups.Add(g!);
+        }
+    }
+
+    // ── Commands ──────────────────────────────────────────────────────────────
 
     private async Task StartAsync()
     {
@@ -308,7 +353,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        // 使用 SettingsViewModel 中的值
         if (!TryParsePorts(out var mixedPort, out var clashApiPort, out var error))
         {
             StatusText = error;
@@ -359,7 +403,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             EnableDirectCn: EnableDirectCn,
             EnableTun: EnableTun,
             TunInterfaceName: null,
-            BypassTunProcesses: _settingsViewModel.BypassTunProcesses
+            BypassTunProcesses: _settingsViewModel.BypassTunProcesses,
+            SubscriptionGroups: _subscriptionGroups.ToList()
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -369,7 +414,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         var configPath = Path.Combine(workDir, "config.json");
 
         var configFactory = new SingBoxConfigFactoryV2();
-        
+
         if (_core is not null)
         {
             await _core.StopAsync();
@@ -386,7 +431,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 ? _settings with { TunInterfaceName = BuildTunInterfaceName(attempt) }
                 : _settings with { TunInterfaceName = null };
 
-            // 确保每次重试都用新的 interface_name 重新生成 config.json
             WowProxy.Domain.AppRuntime.TunInterfaceName = runtimeSettings.TunInterfaceName;
             await configFactory.WriteAsync(runtimeSettings, configPath);
             TryAppendTunSummary(configPath);
@@ -460,42 +504,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private static string? BuildTunInterfaceName(int attempt)
     {
-        // 强制每次都用随机名，彻底规避 already exists
         return "wowproxy-tun-" + Guid.NewGuid().ToString("N").Substring(0, 6);
     }
 
     private void TryAppendTunSummary(string configPath)
     {
-        if (!EnableTun)
-        {
-            return;
-        }
-
+        if (!EnableTun) return;
         try
         {
             using var stream = File.OpenRead(configPath);
             using var doc = JsonDocument.Parse(stream);
             if (!doc.RootElement.TryGetProperty("inbounds", out var inbounds) || inbounds.ValueKind != JsonValueKind.Array)
-            {
                 return;
-            }
 
             foreach (var inbound in inbounds.EnumerateArray())
             {
                 if (!inbound.TryGetProperty("type", out var typeEl) || typeEl.ValueKind != JsonValueKind.String)
-                {
                     continue;
-                }
-
                 if (!string.Equals(typeEl.GetString(), "tun", StringComparison.OrdinalIgnoreCase))
-                {
                     continue;
-                }
 
                 var iface = inbound.TryGetProperty("interface_name", out var ifaceEl) && ifaceEl.ValueKind == JsonValueKind.String
-                    ? ifaceEl.GetString()
-                    : null;
-
+                    ? ifaceEl.GetString() : null;
                 var addr = inbound.TryGetProperty("address", out var addrEl) && addrEl.ValueKind == JsonValueKind.Array
                     ? string.Join(", ", addrEl.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.String).Select(a => a.GetString()).Where(s => !string.IsNullOrWhiteSpace(s)))
                     : string.Empty;
@@ -504,9 +534,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
         }
-        catch
-        {
-        }
+        catch { }
     }
 
     private static string BuildSelectedNodeSummary(ProxyNode node)
@@ -527,35 +555,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             sb.Append("  tls=")
                 .Append(string.Equals(node.Security, "reality", StringComparison.OrdinalIgnoreCase) ? "reality" : "on");
             if (!string.IsNullOrWhiteSpace(node.TlsServerName))
-            {
                 sb.Append("  sni=").Append(node.TlsServerName);
-            }
             if (!string.IsNullOrWhiteSpace(node.UtlsFingerprint))
-            {
                 sb.Append("  fp=").Append(node.UtlsFingerprint);
-            }
             if (!string.IsNullOrWhiteSpace(node.TlsAlpn))
-            {
                 sb.Append("  alpn=").Append(node.TlsAlpn);
-            }
             else if (isWs)
-            {
                 sb.Append("  alpn=http/1.1(auto)");
-            }
             if (node.TlsInsecure)
-            {
                 sb.Append("  insecure=true");
-            }
         }
 
         if (!string.IsNullOrWhiteSpace(node.TransportType))
-        {
             sb.Append("  transport=").Append(node.TransportType);
-        }
         if (!string.IsNullOrWhiteSpace(node.TransportHost))
-        {
             sb.Append("  host=").Append(node.TransportHost);
-        }
         if (!string.IsNullOrWhiteSpace(node.TransportPath))
         {
             var path = node.TransportPath;
@@ -571,10 +585,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                         break;
                     }
                 }
-
                 path = path[..queryIndex];
             }
-
             sb.Append("  path=").Append(path);
         }
 
@@ -599,31 +611,70 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         StatusText = "更新订阅中...";
         AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"更新订阅：{SanitizeUrlForLog(url)}"));
 
-        var (nodes, errors) = await NodeImport.LoadFromSubscriptionAsync(url, CancellationToken.None);
+        // Determine group name for this subscription URL
+        var existingEntry = _subscriptionGroups.FirstOrDefault(e => string.Equals(e.Url, url, StringComparison.OrdinalIgnoreCase));
+        string groupName;
+        if (existingEntry is not null)
+        {
+            groupName = existingEntry.GroupName;
+        }
+        else
+        {
+            // Auto-generate group name: "订阅1", "订阅2", ...
+            var idx = _subscriptionGroups.Count + 1;
+            groupName = $"订阅{idx}";
+        }
+
+        var (nodes, errors) = await NodeImport.LoadFromSubscriptionAsync(url, CancellationToken.None, groupName);
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
             var activeId = ActiveNode?.Id;
+
+            // Register this subscription group
+            if (existingEntry is null)
+            {
+                _subscriptionGroups.Add(new SubscriptionEntry(groupName, url));
+            }
+
+            // Keep nodes from OTHER subscription groups and manual nodes (no group)
+            var subscriptionNodeIds = new HashSet<string>(nodes.Select(n => n.Id), StringComparer.OrdinalIgnoreCase);
+            var otherNodes = _nodes
+                .Where(m => !string.Equals(m.Node.SubscriptionGroup, groupName, StringComparison.OrdinalIgnoreCase)
+                            && !subscriptionNodeIds.Contains(m.Id))
+                .Select(m => m.Node)
+                .ToList();
+
+            var merged = nodes.Concat(otherNodes)
+                .GroupBy(n => n.Id, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             _nodes.Clear();
-            foreach (var n in nodes)
-            {
+            foreach (var n in merged)
                 _nodes.Add(new ProxyNodeModel(n));
-            }
 
+            RebuildNodeGroups();
+            SelectedGroup = groupName;
+
+            // Restore active node
             if (!string.IsNullOrWhiteSpace(activeId))
-            {
                 ActiveNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, activeId, StringComparison.OrdinalIgnoreCase));
-            }
-            
-            // If active node is lost or was null, try to restore from settings (if partial update?) 
-            // actually _settings.SelectedNodeId holds the active one.
             if (ActiveNode == null && !string.IsNullOrWhiteSpace(_settings.SelectedNodeId))
+                ActiveNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, _settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase));
+
+            if (ActiveNode != null && !FilteredNodes.Contains(ActiveNode))
             {
-                 ActiveNode = _nodes.FirstOrDefault(n => string.Equals(n.Id, _settings.SelectedNodeId, StringComparison.OrdinalIgnoreCase));
+                // If the active node is not in the currently selected group, don't force select it
+                SelectedNode = FilteredNodes.FirstOrDefault();
+            }
+            else
+            {
+                SelectedNode = ActiveNode ?? FilteredNodes.FirstOrDefault();
             }
 
-            // Auto-select the first one for UI convenience, but don't change ActiveNode
-            SelectedNode = ActiveNode ?? _nodes.FirstOrDefault();
+            nodes = merged;
         });
 
         _settings = _settings with
@@ -631,26 +682,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             SubscriptionUrl = url,
             Nodes = nodes,
             SelectedNodeId = ActiveNode?.Id,
+            SubscriptionGroups = _subscriptionGroups.ToList(),
         };
 
         await _settingsStore.SaveAsync(_settings);
 
-        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"订阅更新完成：{nodes.Count} 个节点"));
+        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"订阅更新完成：{nodes.Count} 个节点（分组：{groupName}）"));
         foreach (var e in errors.Take(10))
-        {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, e));
-        }
 
         StatusText = nodes.Count == 0 ? "订阅为空或解析失败" : "订阅已更新";
     }
 
     private static string SanitizeUrlForLog(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-        {
-            return url;
-        }
-
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return url;
         var safe = new UriBuilder(uri)
         {
             UserName = string.Empty,
@@ -658,7 +704,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Query = string.Empty,
             Fragment = string.Empty,
         }.Uri;
-
         return safe.ToString();
     }
 
@@ -671,32 +716,59 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        var (nodes, errors) = NodeImport.ParseText(text);
+        var (nodes, errors, isClash) = NodeImport.ParseText(text);
+
+        // If the imported content is Clash YAML (including base64-encoded YAML), auto-assign a group.
+        string? importGroupName = null;
+        if (nodes.Count > 0 && isClash)
+        {
+            // Check if there's already a subscription entry for this exact text hash; use idx-based name
+            var idx = _subscriptionGroups.Count + 1;
+            importGroupName = $"导入{idx}";
+            nodes = nodes.Select(n => n with { SubscriptionGroup = importGroupName }).ToList();
+        }
 
         var merged = _nodes.Select(m => m.Node).ToList();
         foreach (var node in nodes)
         {
-            if (merged.Any(x => string.Equals(x.Id, node.Id, StringComparison.OrdinalIgnoreCase)))
+            var existingIndex = merged.FindIndex(x => string.Equals(x.Id, node.Id, StringComparison.OrdinalIgnoreCase));
+            if (existingIndex >= 0)
             {
+                // If the incoming node has a group but the existing one doesn't, update it
+                if (!string.IsNullOrWhiteSpace(node.SubscriptionGroup) && string.IsNullOrWhiteSpace(merged[existingIndex].SubscriptionGroup))
+                    merged[existingIndex] = node;
                 continue;
             }
-
             merged.Add(node);
         }
 
-        merged = merged
-            .OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        merged = merged.OrderBy(n => n.Name, StringComparer.OrdinalIgnoreCase).ToList();
 
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            _nodes.Clear();
-            foreach (var n in merged)
+            // Register new group if clash import
+            if (importGroupName is not null)
             {
-                _nodes.Add(new ProxyNodeModel(n));
+                _subscriptionGroups.Add(new SubscriptionEntry(importGroupName, string.Empty));
             }
 
-            SelectedNode ??= _nodes.FirstOrDefault();
+            _nodes.Clear();
+            foreach (var n in merged)
+                _nodes.Add(new ProxyNodeModel(n));
+
+            RebuildNodeGroups();
+
+            // Switch to the new group tab if created
+            if (importGroupName is not null)
+            {
+                SelectedGroup = importGroupName;
+            }
+            else
+            {
+                RebuildFilteredNodes();
+            }
+
+            SelectedNode ??= _filteredNodes.FirstOrDefault();
             NodeImportText = string.Empty;
         });
 
@@ -704,15 +776,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             Nodes = merged,
             SelectedNodeId = ActiveNode?.Id,
+            SubscriptionGroups = _subscriptionGroups.ToList(),
         };
 
         await _settingsStore.SaveAsync(_settings);
 
-        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"已导入：{nodes.Count}，节点总数：{merged.Count}"));
+        AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"已导入：{nodes.Count}，节点总数：{merged.Count}" + (importGroupName is not null ? $"（分组：{importGroupName}）" : string.Empty)));
         foreach (var e in errors.Take(10))
-        {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, e));
-        }
 
         StatusText = "已导入节点";
     }
@@ -726,13 +797,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         var wasRunning = _core?.RuntimeInfo.State == CoreState.Running;
-
         ActiveNode = SelectedNode;
         StatusText = $"活动节点已切换：{ActiveNode.Name}";
 
         if (wasRunning)
         {
-            // 热重启：先停止，再用新节点启动
             StatusText = $"正在切换节点：{ActiveNode.Name}，重启内核中...";
             await StopAsync();
             await StartAsync();
@@ -749,30 +818,66 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         var nodeToRemove = SelectedNode;
         _nodes.Remove(nodeToRemove);
+        _filteredNodes.Remove(nodeToRemove);
 
-        if (ReferenceEquals(ActiveNode, nodeToRemove))
-        {
-            ActiveNode = null;
-        }
+        if (ReferenceEquals(ActiveNode, nodeToRemove)) ActiveNode = null;
+        if (ReferenceEquals(SelectedNode, nodeToRemove)) SelectedNode = null;
 
-        // SelectedNode usually becomes null or next item automatically by DataGrid, but let's be safe
-        if (ReferenceEquals(SelectedNode, nodeToRemove))
-        {
-            SelectedNode = null;
-        }
-
+        RebuildNodeGroups();
         _ = PersistSelectionAsync();
         StatusText = "节点已移除";
+    }
+
+    private void RemoveSelectedNodes()
+    {
+        var toRemove = _selectedNodes.ToList();
+        if (toRemove.Count == 0)
+        {
+            // Fall back to single selected node
+            if (SelectedNode is not null) toRemove.Add(SelectedNode);
+        }
+        if (toRemove.Count == 0)
+        {
+            StatusText = "请先选择要移除的节点";
+            return;
+        }
+
+        var removedActive = false;
+        foreach (var node in toRemove)
+        {
+            _nodes.Remove(node);
+            _filteredNodes.Remove(node);
+            if (ReferenceEquals(ActiveNode, node)) removedActive = true;
+        }
+        _selectedNodes.Clear();
+
+        if (removedActive) ActiveNode = null;
+        SelectedNode = _filteredNodes.FirstOrDefault();
+
+        RebuildNodeGroups();
+        _ = PersistSelectionAsync();
+        StatusText = $"已移除 {toRemove.Count} 个节点";
     }
 
     private void ClearNodes()
     {
         _nodes.Clear();
+        _filteredNodes.Clear();
+        _subscriptionGroups.Clear();
+
+        // Reset groups to just "全部"
+        while (_nodeGroups.Count > 1)
+            _nodeGroups.RemoveAt(_nodeGroups.Count - 1);
+
+        _selectedGroup = "全部";
+        OnPropertyChanged(nameof(SelectedGroup));
+
         SelectedNode = null;
         _settings = _settings with
         {
             Nodes = new List<ProxyNode>(),
             SelectedNodeId = null,
+            SubscriptionGroups = null,
         };
         _ = _settingsStore.SaveAsync(_settings);
         StatusText = "节点已清空";
@@ -785,19 +890,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _settings = _settings with
             {
                 Nodes = _nodes.Select(n => n.Node).ToList(),
-                SelectedNodeId = ActiveNode?.Id, // Persist Active Node, not Selected
+                SelectedNodeId = ActiveNode?.Id,
                 SubscriptionUrl = SubscriptionUrl,
                 LogLevel = LogLevel,
                 EnableDirectCn = EnableDirectCn,
                 EnableTun = EnableTun,
                 EnableSystemProxy = EnableSystemProxy,
                 BypassTunProcesses = _settingsViewModel.BypassTunProcesses,
+                SubscriptionGroups = _subscriptionGroups.ToList(),
             };
             await _settingsStore.SaveAsync(_settings);
         }
-        catch
-        {
-        }
+        catch { }
     }
 
     private async Task TestLatencyAsync()
@@ -807,9 +911,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             StatusText = "请先设置 sing-box 路径";
             return;
         }
-
         if (_nodes.Count == 0) return;
-
         StatusText = "正在测试延迟...";
         await NodeTester.TestLatencyAsync(_nodes, SingBoxPath);
         StatusText = "延迟测试完成";
@@ -822,9 +924,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             StatusText = "请先设置 sing-box 路径";
             return;
         }
-
         if (_nodes.Count == 0) return;
-
         StatusText = "正在测试速度...";
         await NodeTester.TestSpeedAsync(_nodes, SingBoxPath);
         StatusText = "速度测试完成";
@@ -850,18 +950,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         await _coreLock.WaitAsync();
         try
         {
-            if (_enableSystemProxy)
-            {
-                _systemProxy.DisableAndRestore();
-            }
-
+            if (_enableSystemProxy) _systemProxy.DisableAndRestore();
             if (_core is not null)
             {
                 await _core.StopAsync();
                 await _core.DisposeAsync();
                 _core = null;
             }
-
             StatusText = "已停止";
         }
         finally
@@ -883,7 +978,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 CoreState.Faulted => $"异常：{info.LastError}",
                 _ => info.State.ToString(),
             };
-
             ConnectButtonText = info.State == CoreState.Running ? "断开" : "连接";
         });
     }
@@ -893,12 +987,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         lock (_gate)
         {
             _logs.Append('[').Append(line.Level).Append("] ").AppendLine(line.Line);
-
             const int MaxChars = 120_000;
             if (_logs.Length > MaxChars)
-            {
                 _logs.Remove(0, _logs.Length - MaxChars);
-            }
         }
 
         if (Interlocked.Exchange(ref _logsUpdateScheduled, 1) == 0)
@@ -961,12 +1052,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 Proxy = new System.Net.WebProxy($"http://127.0.0.1:{mixedPort}"),
                 UseProxy = true,
             };
-
-            using var http = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(6),
-            };
-
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(6) };
             using var resp = await http.GetAsync("http://example.com/");
             var ok = resp.IsSuccessStatusCode;
             AppendLog(new CoreLogLine(DateTimeOffset.Now, ok ? CoreLogLevel.Info : CoreLogLevel.Error, $"自测 HTTP 结果：{(int)resp.StatusCode} {resp.ReasonPhrase}"));
@@ -984,7 +1070,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             await StopAsync();
             return;
         }
-
         await StartAsync();
     }
 }
@@ -1001,11 +1086,8 @@ public sealed class RelayCommand : System.Windows.Input.ICommand
     }
 
     public event EventHandler? CanExecuteChanged;
-
     public bool CanExecute(object? parameter) => _canExecute?.Invoke(parameter) ?? true;
-
     public void Execute(object? parameter) => _execute(parameter);
-
     public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 }
 
@@ -1022,17 +1104,11 @@ public sealed class AsyncRelayCommand : System.Windows.Input.ICommand
     }
 
     public event EventHandler? CanExecuteChanged;
-
-    public bool CanExecute(object? parameter)
-        => !_isRunning && (_canExecute?.Invoke(parameter) ?? true);
+    public bool CanExecute(object? parameter) => !_isRunning && (_canExecute?.Invoke(parameter) ?? true);
 
     public async void Execute(object? parameter)
     {
-        if (!CanExecute(parameter))
-        {
-            return;
-        }
-
+        if (!CanExecute(parameter)) return;
         try
         {
             _isRunning = true;

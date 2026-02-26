@@ -5,6 +5,9 @@ public static class AppRuntime
     public static string? TunInterfaceName { get; set; }
 }
 
+/// <summary>A named subscription entry (URL + display group name).</summary>
+public sealed record SubscriptionEntry(string GroupName, string Url);
+
 public sealed record AppSettings(
     string? SingBoxPath,
     int MixedPort,
@@ -19,7 +22,8 @@ public sealed record AppSettings(
     bool EnableDirectCn = true,
     bool EnableTun = false,
     string? TunInterfaceName = null,
-    string? BypassTunProcesses = null
+    string? BypassTunProcesses = null,
+    List<SubscriptionEntry>? SubscriptionGroups = null
 )
 {
     public static AppSettings Default =>
@@ -37,6 +41,7 @@ public sealed record AppSettings(
             EnableDirectCn: true,
             EnableTun: false,
             TunInterfaceName: null,
-            BypassTunProcesses: null
+            BypassTunProcesses: null,
+            SubscriptionGroups: null
         );
 }
