@@ -189,9 +189,9 @@ public class MapTrafficRadarControl : Canvas
                 ? $"{(conn.DownloadSpeed / 1024.0 / 1024.0):F1} MB/s" 
                 : $"{(conn.DownloadSpeed / 1024.0):F1} KB/s";
             
-            // Use process name or hostname if process missing
-            string labelName = string.IsNullOrWhiteSpace(conn.Process) ? conn.Host : conn.Process;
-            if (labelName.Length > 15) labelName = labelName.Substring(0, 15) + "..";
+            // Use SiteName (which captures YouTube etc) or process name if process missing
+            string labelName = string.IsNullOrWhiteSpace(conn.SiteName) ? (string.IsNullOrWhiteSpace(conn.Process) ? conn.Host : conn.Process) : conn.SiteName;
+            if (labelName.Length > 20) labelName = labelName.Substring(0, 18) + "..";
 
             var label = new TextBlock
             {

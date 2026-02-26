@@ -24,6 +24,8 @@ public class ConnectionModel : INotifyPropertyChanged
     public string Host => string.IsNullOrWhiteSpace(_connection.Metadata.Host) 
         ? _connection.Metadata.DestinationIP 
         : _connection.Metadata.Host;
+
+    public string SiteName => GetSiteName(Host);
     
     public string DestinationPort => _connection.Metadata.DestinationPort;
     
@@ -139,6 +141,60 @@ public class ConnectionModel : INotifyPropertyChanged
         if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
         if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
         return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    private static string GetSiteName(string host)
+    {
+        if (string.IsNullOrWhiteSpace(host)) return "Unknown";
+        if (System.Net.IPAddress.TryParse(host, out _)) return host;
+
+        var lowerHost = host.ToLowerInvariant();
+
+        // 1. Common CDN/Service Mappings
+        if (IsDomain(lowerHost, "googlevideo.com", "ytimg.com", "ggpht.com", "youtube.com"))
+            return "YouTube";
+        if (IsDomain(lowerHost, "fbcdn.net", "facebook.com", "messenger.com"))
+            return "Facebook";
+        if (IsDomain(lowerHost, "netflix.com", "nflxext.com", "nflxvideo.net", "nflxso.net"))
+            return "Netflix";
+        if (IsDomain(lowerHost, "twimg.com", "twitter.com", "t.co", "x.com"))
+            return "Twitter/X";
+        if (IsDomain(lowerHost, "discordapp.net", "discord.com", "discord.gg"))
+            return "Discord";
+        if (IsDomain(lowerHost, "githubusercontent.com", "github.com"))
+            return "GitHub";
+        if (IsDomain(lowerHost, "microsoft.com", "bing.com", "live.com", "windowsupdate.com", "outlook.com"))
+            return "Microsoft";
+        if (IsDomain(lowerHost, "apple.com", "icloud.com", "mzstatic.com"))
+            return "Apple";
+        if (IsDomain(lowerHost, "steamcontent.com", "steampowered.com"))
+            return "Steam";
+        if (IsDomain(lowerHost, "akamaized.net", "akamaihd.net", "fastly.net", "cloudfront.net"))
+            return "CDN/Static";
+
+        // 2. Fallback: Simple Root Domain Extraction
+        var parts = lowerHost.Split('.');
+        if (parts.Length >= 2)
+        {
+            // Handle common double extensions like .com.cn, .net.cn, .org.cn
+            if (parts.Length >= 3 && (parts[parts.Length - 2] == "com" || parts[parts.Length - 2] == "net" || parts[parts.Length - 2] == "org") && parts[parts.Length - 1].Length == 2)
+            {
+                return $"{parts[parts.Length - 3]}.{parts[parts.Length - 2]}.{parts[parts.Length - 1]}";
+            }
+            return $"{parts[parts.Length - 2]}.{parts[parts.Length - 1]}";
+        }
+
+        return host;
+    }
+
+    private static bool IsDomain(string host, params string[] domains)
+    {
+        foreach (var domain in domains)
+        {
+            if (host.Equals(domain, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

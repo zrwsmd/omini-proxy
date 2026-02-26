@@ -234,6 +234,7 @@
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Columns>
+                            <DataGridTextColumn Header="站点" Binding="{Binding SiteName}" Width="120"/>
                             <DataGridTextColumn Header="进程" Binding="{Binding Process}" Width="140"/>
                             <DataGridTextColumn Header="目标主机" Binding="{Binding Host}" Width="180"/>
                             <DataGridTextColumn Header="端口" Binding="{Binding DestinationPort}" Width="60"/>
