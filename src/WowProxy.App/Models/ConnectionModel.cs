@@ -15,6 +15,7 @@ public class ConnectionModel : INotifyPropertyChanged
         _connection = connection;
         LastUpload = connection.Upload;
         LastDownload = connection.Download;
+        _ = ResolveLocationAsync();
     }
 
     public string Id => _connection.Id;
@@ -39,6 +40,47 @@ public class ConnectionModel : INotifyPropertyChanged
 
     public long LastUpload { get; private set; }
     public long LastDownload { get; private set; }
+    
+    // GeoIP Information
+    private double _latitude;
+    private double _longitude;
+    private string? _country;
+
+    public double Latitude
+    {
+        get => _latitude;
+        set { if (_latitude != value) { _latitude = value; OnPropertyChanged(); } }
+    }
+
+    public double Longitude
+    {
+        get => _longitude;
+        set { if (_longitude != value) { _longitude = value; OnPropertyChanged(); } }
+    }
+
+    public string? Country
+    {
+        get => _country;
+        set { if (_country != value) { _country = value; OnPropertyChanged(); } }
+    }
+
+    private async Task ResolveLocationAsync()
+    {
+        // Try to resolve the destination IP
+        var host = _connection.Metadata.DestinationIP;
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            host = _connection.Metadata.Host; // Fallback to host if IP is empty, though DNS resolution is better
+        }
+        
+        var geoInfo = await WowProxy.App.Services.GeoIpResolutionService.Instance.ResolveIpAsync(host);
+        if (geoInfo != null && geoInfo.IsResolved)
+        {
+            Latitude = geoInfo.Latitude;
+            Longitude = geoInfo.Longitude;
+            Country = geoInfo.Country;
+        }
+    }
 
     public long UploadSpeed
     {

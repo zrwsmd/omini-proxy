@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:WowProxy.App"
         xmlns:views="clr-namespace:WowProxy.App.Views"
+        xmlns:controls="clr-namespace:WowProxy.App.Controls"
         xmlns:converters="clr-namespace:WowProxy.App.Converters"
         mc:Ignorable="d"
         Title="WowProxy" Height="600" Width="1000">
@@ -193,9 +194,17 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="全球雷达">
+                <Grid DataContext="{Binding Dashboard}">
+                    <controls:MapTrafficRadarControl Connections="{Binding Connections}" Margin="10"/>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="连接详情">
                 <Grid DataContext="{Binding Dashboard}">
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="200" />
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
@@ -208,9 +217,9 @@
                         <TextBlock VerticalAlignment="Center" Margin="0,0,8,0" Text="搜索过滤" />
                         <TextBox Grid.Column="1" Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
                     </Grid>
-
+                    
                     <DataGrid
-                        Grid.Row="1"
+                        Grid.Row="1" Grid.RowSpan="3"
                         ItemsSource="{Binding Connections}"
                         AutoGenerateColumns="False"
                         IsReadOnly="True"
