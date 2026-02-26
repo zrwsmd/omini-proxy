@@ -1,16 +1,22 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Forms;
+using WowProxy.Core.Abstractions;
 
 namespace WowProxy.App;
 
 internal sealed class TrayIconManager : IDisposable
 {
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
     private readonly NotifyIcon _notifyIcon;
     private readonly MainViewModel _viewModel;
     private readonly Window _mainWindow;
     private readonly ToolStripMenuItem _connectMenuItem;
     private bool _disposed;
+    private Icon? _currentIcon;
 
     public TrayIconManager(MainViewModel viewModel, Window mainWindow)
     {
@@ -26,9 +32,10 @@ internal sealed class TrayIconManager : IDisposable
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add("退出 WowProxy", null, OnExitClicked);
 
+        _currentIcon = CreateGraphicIcon(_viewModel.CoreState);
         _notifyIcon = new NotifyIcon
         {
-            Icon = CreateGraphicIcon(),
+            Icon = _currentIcon,
             Text = "WowProxy",
             Visible = true,
             ContextMenuStrip = contextMenu,
@@ -45,6 +52,24 @@ internal sealed class TrayIconManager : IDisposable
         if (e.PropertyName is nameof(MainViewModel.ConnectButtonText) or nameof(MainViewModel.StatusText))
         {
             System.Windows.Application.Current.Dispatcher.BeginInvoke(UpdateTooltip);
+        }
+        else if (e.PropertyName == nameof(MainViewModel.CoreState))
+        {
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(UpdateIcon);
+        }
+    }
+
+    private void UpdateIcon()
+    {
+        if (_disposed) return;
+        var oldIcon = _currentIcon;
+        _currentIcon = CreateGraphicIcon(_viewModel.CoreState);
+        _notifyIcon.Icon = _currentIcon;
+
+        if (oldIcon != null)
+        {
+            DestroyIcon(oldIcon.Handle);
+            oldIcon.Dispose();
         }
     }
 
@@ -85,21 +110,34 @@ internal sealed class TrayIconManager : IDisposable
     }
 
     /// <summary>
-    /// 使用 GDI+ 绘制一个简单的蓝色圆点图标作为托盘图标，避免外部资源加载问题。
+    /// 使用 GDI+ 绘制一个简单的圆点图标作为托盘图标，颜色根据内核状态变化。
     /// </summary>
-    private static Icon CreateGraphicIcon()
+    private static Icon CreateGraphicIcon(CoreState state)
     {
         using var bmp = new Bitmap(16, 16);
         using (var g = Graphics.FromImage(bmp))
         {
             g.Clear(Color.Transparent);
-            // 绘制一个深蓝色圆点
-            using var brush = new SolidBrush(Color.FromArgb(0x1E, 0x90, 0xFF)); // DodgerBlue
+
+            // 根据状态选择颜色
+            Color mainColor = state switch
+            {
+                CoreState.Running => Color.FromArgb(0x32, 0xCD, 0x32), // LimeGreen
+                CoreState.Starting => Color.FromArgb(0xFF, 0x8C, 0x00), // DarkOrange
+                CoreState.Faulted => Color.FromArgb(0xDC, 0x14, 0x3C), // Crimson
+                CoreState.Stopping => Color.FromArgb(0x80, 0x80, 0x80), // Gray
+                _ => Color.FromArgb(0x1E, 0x90, 0xFF) // DodgerBlue (Stopped)
+            };
+
+            using var brush = new SolidBrush(mainColor);
             g.FillEllipse(brush, 1, 1, 14, 14);
+
             // 绘制一个中心白色小圆点
             g.FillEllipse(Brushes.White, 5, 5, 6, 6);
         }
-        return Icon.FromHandle(bmp.GetHicon());
+
+        var hIcon = bmp.GetHicon();
+        return Icon.FromHandle(hIcon);
     }
 
     public void Dispose()
@@ -109,5 +147,11 @@ internal sealed class TrayIconManager : IDisposable
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
+
+        if (_currentIcon != null)
+        {
+            DestroyIcon(_currentIcon.Handle);
+            _currentIcon.Dispose();
+        }
     }
 }

@@ -31,6 +31,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private AppSettings _settings;
     private SingBoxCoreAdapter? _core;
+    private CoreState _coreState = CoreState.Stopped;
     private DashboardViewModel _dashboard;
     private SettingsViewModel _settingsViewModel;
 
@@ -273,6 +274,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public CoreState CoreState
+    {
+        get => _coreState;
+        private set
+        {
+            if (_coreState == value) return;
+            _coreState = value;
+            OnPropertyChanged();
+        }
+    }
+
     public string LogsText
     {
         get
@@ -349,24 +361,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (EnableTun && !IsRunningAsAdmin())
         {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, "TUN 模式需要管理员权限（请右键以管理员身份运行）。"));
+            CoreState = CoreState.Faulted;
             StatusText = "请以管理员身份运行";
             return;
         }
 
         if (!TryParsePorts(out var mixedPort, out var clashApiPort, out var error))
         {
+            CoreState = CoreState.Faulted;
             StatusText = error;
             return;
         }
 
         if (string.IsNullOrWhiteSpace(SingBoxPath))
         {
+            CoreState = CoreState.Faulted;
             StatusText = "请先选择 sing-box.exe";
             return;
         }
 
         if (_nodes.Count > 0 && ActiveNode is null)
         {
+            CoreState = CoreState.Faulted;
             StatusText = "请先设置活动节点";
             return;
         }
@@ -374,6 +390,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!IsLocalPortAvailable(mixedPort))
         {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, $"端口被占用：127.0.0.1:{mixedPort}（请改端口或关闭占用进程）"));
+            CoreState = CoreState.Faulted;
             StatusText = "端口被占用";
             return;
         }
@@ -422,6 +439,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _core = null;
         }
 
+        CoreState = CoreState.Starting;
         var maxAttempts = EnableTun ? 3 : 1;
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
@@ -456,6 +474,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (!check.IsOk)
             {
                 AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, check.Stderr.Trim()));
+                CoreState = CoreState.Faulted;
                 StatusText = "配置检查失败";
                 return;
             }
@@ -478,6 +497,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             if (!EnableTun || !tunInitIssue || attempt == maxAttempts - 1)
             {
+                CoreState = CoreState.Faulted;
                 StatusText = "启动失败";
                 return;
             }
@@ -487,7 +507,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             await Task.Delay(1200);
         }
     }
-
     private static bool IsRunningAsAdmin()
     {
         try
@@ -957,6 +976,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 await _core.DisposeAsync();
                 _core = null;
             }
+            CoreState = CoreState.Stopped;
             StatusText = "已停止";
         }
         finally
@@ -969,6 +989,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
+            CoreState = info.State;
             StatusText = info.State switch
             {
                 CoreState.Stopped => "已停止",
