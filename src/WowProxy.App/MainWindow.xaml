@@ -196,7 +196,7 @@
 
             <TabItem Header="全球雷达">
                 <Grid DataContext="{Binding Dashboard}">
-                    <controls:MapTrafficRadarControl Connections="{Binding Connections}" Margin="10"/>
+                    <controls:MapTrafficRadarControl Connections="{Binding Connections}" />
                 </Grid>
             </TabItem>
 

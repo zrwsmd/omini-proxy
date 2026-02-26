@@ -1,210 +1,601 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
-using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using WowProxy.App.Models;
+using WpfColor = System.Windows.Media.Color;
+using WpfPoint = System.Windows.Point;
+using WpfBrushes = System.Windows.Media.Brushes;
+using WpfRectangle = System.Windows.Shapes.Rectangle;
 
 namespace WowProxy.App.Controls;
 
+/// <summary>
+/// A world-map radar visualization showing live traffic connections as animated arcs.
+/// Architecture:
+///   Layer 0: Background (dark gradient)
+///   Layer 1: Grid lines (lat/lon grid, equator, prime meridian)
+///   Layer 2: World map landmass polygon (static, redrawn only on resize)
+///   Layer 3: Dynamic connection arcs + labels (redrawn each tick)
+///   Layer 4: Animated "data packet" dots traveling along arcs (moved each tick)
+/// </summary>
 public class MapTrafficRadarControl : Canvas
 {
-    private DispatcherTimer _animationTimer;
+    // ─── Constants ──────────────────────────────────────────────────────────────
 
-    public static readonly DependencyProperty ConnectionsProperty = 
+    private const double MapPadX = 0.03;   // fractional horizontal padding
+    private const double MapPadY = 0.06;   // fractional vertical padding
+
+    // Origin: Beijing (default; in a real app, detect local public IP's geo)
+    private const double OriginLat = 39.9;
+    private const double OriginLon = 116.4;
+
+    // ─── Fields ──────────────────────────────────────────────────────────────────
+
+    private readonly Canvas _mapLayer  = new() { IsHitTestVisible = false };
+    private readonly Canvas _arcLayer  = new() { IsHitTestVisible = false };
+    private readonly Canvas _dotLayer  = new() { IsHitTestVisible = false };
+
+    private readonly DispatcherTimer _animTimer;
+    private readonly Random _rng = new();
+
+    // Tracks animated packets per connection id
+    private readonly Dictionary<string, PacketDot> _packets = new();
+
+    // Last snapshot of connections used for drawing
+    private List<ConnectionModel> _lastSnapshot = new();
+
+    private double _lastWidth;
+    private double _lastHeight;
+
+    // ─── Dependency Property ─────────────────────────────────────────────────────
+
+    public static readonly DependencyProperty ConnectionsProperty =
         DependencyProperty.Register(
-            nameof(Connections), 
-            typeof(ObservableCollection<ConnectionModel>), 
-            typeof(MapTrafficRadarControl), 
+            nameof(Connections),
+            typeof(ObservableCollection<ConnectionModel>),
+            typeof(MapTrafficRadarControl),
             new PropertyMetadata(null, OnConnectionsChanged));
 
     public ObservableCollection<ConnectionModel> Connections
     {
-        get { return (ObservableCollection<ConnectionModel>)GetValue(ConnectionsProperty); }
-        set { SetValue(ConnectionsProperty, value); }
+        get => (ObservableCollection<ConnectionModel>)GetValue(ConnectionsProperty);
+        set => SetValue(ConnectionsProperty, value);
     }
 
-    // World Map simplified path data (Robinson or similar pseudo-cylindrical projection)
-    private const string WorldMapData = "M 326.839 123.003 C 326.839 123.003 328.61 123.111 328.847 121.751 C 329.083 120.392 329.406 120.672 328.847 121.751 C 328.288 122.829 328.051 123.003 326.839 123.003 Z M 352.484 278.434 C 352.348 277.935 352.898 277.854 353.491 277.019 C 353.805 276.577 353.682 276.109 353.385 275.955 C 353.1 275.807 352.406 276.248 351.995 275.768 C 351.644 275.358 351.724 274.636 352.668 274.721 C 353.766 274.819 354.195 275.643 355.772 275.836 C 356.12 275.878 356.331 276.471 356.883 276.702 C 357.575 276.992 358.5 276.216 359.882 276.43 C 361.341 276.657 362.302 277.074 361.309 278.076 C 360.551 278.841 359.544 278.878 359.544 278.878 C 359.544 278.878 359.043 278.706 358.985 279.141 C 358.91 279.699 359.13 280.99 358.749 281.332 C 358.267 281.765 357.773 281.259 357.773 281.259 C 357.773 281.259 357.07 281.565 357.199 281.821 C 357.348 282.116 357.942 282.262 357.942 282.262 C 357.942 282.262 357.884 282.686 357.062 282.352 C 356.291 282.039 355.602 282.52 355.337 282.47 C 355 282.406 355.074 282.029 355.074 282.029 C 355.074 282.029 354.341 282.288 353.945 282.091 C 352.337 281.29 353.511 280.528 353.473 279.418 C 353.456 278.9 352.621 278.937 352.484 278.434 Z M 326.068 123.364 C 326.068 123.364 324.966 123.774 325.281 124.939 C 325.596 126.104 324.335 124.551 323.547 124.314 C 322.759 124.077 325.044 122.9 326.068 123.364 Z M 324.57 286.075 L 324.453 286.969 C 323.719 287.054 322.502 286.671 321.834 286.177 C 321.411 285.864 322.185 285.345 322.564 284.978 C 322.915 284.636 323.183 284.721 323.513 284.84 C 324.301 285.127 324.643 285.939 324.57 286.075 Z M 447.852 169.577 L 447.28 169.761 C 445.698 170.274 445.412 168.966 446.067 168.322 C 446.495 167.902 447.653 167.731 448.273 168.125 C 448.868 168.502 448.167 169.475 447.852 169.577 Z M 449.623 171.185 L 448.784 171.721 L 448.514 170.838 L 449.261 170.472 C 449.261 170.472 449.497 170.528 449.539 170.9 C 449.58 171.261 449.623 171.185 449.623 171.185 Z M 443.435 174.12 C 442.227 175.753 440.09 174.453 439.462 173.344 C 438.307 171.306 438.674 168.611 440.758 167.576 C 441.79 167.063 441.604 168.204 442.138 168.497 C 442.756 168.835 444.025 168.209 444.596 168.636 C 445.195 169.083 445.242 169.837 444.825 170.364 C 444.5 170.771 443.512 170.47 443.834 171.691 C 444 172.31 444.606 172.535 444.407 173.181 C 444.257 173.669 443.899 173.492 443.435 174.12 Z M 428.149 135.597 L 427.79 134.484 C 427.79 134.484 429.027 134.225 429.566 134.404 C 430.104 134.58 429.744 135.637 429.744 135.637 L 428.149 135.597 Z M 217.747 220.155 C 217.747 220.155 215.176 221.751 214.373 221.907 C 213.572 222.064 214.88 221.2 215.011 220.751 C 215.141 220.302 214.471 219.782 215.344 219.46 C 216.215 219.141 217.747 220.155 217.747 220.155 Z M 486.262 254.779 C 485.49 255.452 485.642 256.096 484.815 256.402 C 484.585 256.488 484.341 254.912 484.664 254.349 C 485.071 253.641 486.095 254.067 486.262 254.779 Z M 488.087 259.673 L 488.163 260.407 C 488.163 260.407 487.697 260.59 487.491 260.519 C 487.286 260.448 487.319 260.153 487.319 260.153 L 487.89 259.789 C 487.89 259.789 488.077 259.567 488.087 259.673 Z M 213.633 226.756 C 215.361 226.541 215.702 227.344 216.538 227.149 C 217.568 226.91 218.156 224.288 219.143 224.524 C 220.156 224.767 219.567 225.432 219.116 226.234 C 218.337 227.616 220.126 227.8 221.135 228.618 C 221.6 228.995 221.731 230.141 221.161 230.076 C 220.615 230.013 220.573 229.467 220.443 229.452 C 220.219 229.426 219.722 230.297 218.814 230.12 C 217.514 229.866 217.818 228.471 216.142 228.169 C 214.363 227.846 213.561 228.846 212.923 228.751 C 212.083 228.625 212.378 226.912 213.633 226.756 Z M 481.565 242.067 C 481.565 242.067 481.823 241.246 482.491 241.458 C 483.081 241.644 483.21 242.662 482.721 242.855 C 482.43 242.972 481.565 242.067 481.565 242.067 Z M 486.082 245.894 C 486.082 245.894 485.459 246.335 485.484 245.71 C 485.509 245.086 486.602 244.646 486.744 245.166 C 486.886 245.688 486.082 245.894 486.082 245.894 Z M 487.64 246.208 L 488.163 246.387 C 488.163 246.387 488.455 246.892 488.196 247 C 487.937 247.108 487.35 246.85 487.35 246.85 C 487.35 246.85 487.214 246.46 487.279 246.334 C 487.345 246.21 487.64 246.208 487.64 246.208 Z M 486.327 248.814 C 486.446 248.272 487.327 248.016 487.562 248.56 C 487.72 248.922 487.294 249.202 486.892 249.332 C 486.441 249.479 486.229 249.256 486.327 248.814 Z M 504.629 203.411 C 504.629 203.411 505.281 202.43 506.029 202.949 C 506.776 203.47 506.319 204.673 505.571 204.544 C 504.821 204.414 504.402 203.737 504.629 203.411 Z M 165.733 116.595 L 164.711 117.18 C 164.711 117.18 163.633 116.326 163.644 115.821 C 163.655 115.316 163.923 114.966 164.475 115.011 C 165.027 115.056 165.344 115.91 165.344 115.91 L 165.733 116.595 Z M 168.647 115.087 C 168.204 115.908 167.319 116.353 166.452 116.035 C 165.807 115.798 166.757 115.052 166.822 114.654 C 166.903 114.158 167.662 114.285 167.89 114.34 C 168.176 114.408 168.99 114.449 168.647 115.087 Z Z";
+    // ─── Constructor ─────────────────────────────────────────────────────────────
 
     public MapTrafficRadarControl()
     {
-        this.Background = new SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#0f111a")); 
-        this.ClipToBounds = true;
+        ClipToBounds = true;
+        Background = new SolidColorBrush(WpfColor.FromRgb(8, 12, 26));
 
-        _animationTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromMilliseconds(50)
-        };
-        _animationTimer.Tick += AnimationTimer_Tick;
-        _animationTimer.Start();
-        
-        this.SizeChanged += (s, e) => DrawStaticMap();
+        // Stack layers
+        Children.Add(_mapLayer);
+        Children.Add(_arcLayer);
+        Children.Add(_dotLayer);
+
+        SizeChanged += (_, _) => OnResize();
+
+        _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        _animTimer.Tick += OnAnimTick;
+        _animTimer.Start();
     }
+
+    // ─── Resize ──────────────────────────────────────────────────────────────────
+
+    private void OnResize()
+    {
+        if (ActualWidth < 10 || ActualHeight < 10) return;
+
+        // Stretch sub-canvases to fill
+        foreach (Canvas c in new[] { _mapLayer, _arcLayer, _dotLayer })
+        {
+            c.Width = ActualWidth;
+            c.Height = ActualHeight;
+        }
+
+        // Only redraw the static map if size actually changed
+        if (Math.Abs(ActualWidth - _lastWidth) > 0.5 || Math.Abs(ActualHeight - _lastHeight) > 0.5)
+        {
+            _lastWidth = ActualWidth;
+            _lastHeight = ActualHeight;
+            DrawStaticMap();
+        }
+    }
+
+    // ─── Static Map (Layer 1 + 2) ────────────────────────────────────────────────
 
     private void DrawStaticMap()
     {
-        this.Children.Clear();
-        
-        if (ActualWidth == 0 || ActualHeight == 0) return;
+        _mapLayer.Children.Clear();
 
-        // Draw a base World Map using a pre-defined path
-        var geometry = Geometry.Parse(WorldMapData);
-        var path = new Path
+        double w = ActualWidth;
+        double h = ActualHeight;
+
+        // --- Background gradient ---
+        var bgRect = new WpfRectangle
         {
-            Data = geometry,
-            Fill = new SolidColorBrush(System.Windows.Media.Color.FromArgb(100, 30, 40, 50)),
-            Stroke = new SolidColorBrush(System.Windows.Media.Color.FromArgb(50, 255, 255, 255)),
-            StrokeThickness = 0.5,
-            Stretch = Stretch.Uniform,
-            Width = ActualWidth * 0.9,
-            Height = ActualHeight * 0.9
+            Width = w,
+            Height = h,
+            Fill = new LinearGradientBrush(
+                WpfColor.FromRgb(6, 10, 22),
+                WpfColor.FromRgb(12, 18, 40),
+                new WpfPoint(0, 0),
+                new WpfPoint(0, 1))
         };
-        
-        SetLeft(path, ActualWidth * 0.05);
-        SetTop(path, ActualHeight * 0.05);
-        this.Children.Add(path);
+        _mapLayer.Children.Add(bgRect);
 
-        // Draw horizontal equator line and vertical meridian
-        var eq = new Line { X1 = 0, Y1 = ActualHeight/2, X2 = ActualWidth, Y2 = ActualHeight/2, Stroke = new SolidColorBrush(System.Windows.Media.Color.FromArgb(30, 0, 255, 100)), StrokeThickness=1 };
-        var mer = new Line { X1 = ActualWidth/2, Y1 = 0, X2 = ActualWidth/2, Y2 = ActualHeight, Stroke = new SolidColorBrush(System.Windows.Media.Color.FromArgb(30, 0, 255, 100)), StrokeThickness=1 };
-        
-        this.Children.Add(eq);
-        this.Children.Add(mer);
+        // --- Grid lines ---
+        // Latitude lines every 30°
+        for (int lat = -60; lat <= 60; lat += 30)
+        {
+            var pt1 = LatLonToXY(lat, -180);
+            var pt2 = LatLonToXY(lat, 180);
+            bool isEquator = lat == 0;
+            _mapLayer.Children.Add(new Line
+            {
+                X1 = pt1.X, Y1 = pt1.Y, X2 = pt2.X, Y2 = pt2.Y,
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(isEquator ? (byte)45 : (byte)20, 0, 220, 120)),
+                StrokeThickness = isEquator ? 1.0 : 0.5,
+                StrokeDashArray = isEquator ? null : new DoubleCollection { 4, 6 }
+            });
+        }
+
+        // Longitude lines every 30°
+        for (int lon = -180; lon <= 180; lon += 30)
+        {
+            var pt1 = LatLonToXY(90, lon);
+            var pt2 = LatLonToXY(-90, lon);
+            bool isPrime = lon == 0;
+            _mapLayer.Children.Add(new Line
+            {
+                X1 = pt1.X, Y1 = pt1.Y, X2 = pt2.X, Y2 = pt2.Y,
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(isPrime ? (byte)45 : (byte)15, 0, 220, 120)),
+                StrokeThickness = isPrime ? 1.0 : 0.5,
+                StrokeDashArray = isPrime ? null : new DoubleCollection { 4, 6 }
+            });
+        }
+
+        // --- World map landmass ---
+        DrawLandmass();
+
+        // --- Origin marker (local machine) ---
+        var origin = LatLonToXY(OriginLat, OriginLon);
+        DrawPulseRing(_mapLayer, origin, 14, WpfColor.FromRgb(0, 255, 180), 2.0);
+        DrawDot(_mapLayer, origin, 5, WpfColor.FromRgb(0, 255, 180));
+
+        // Label
+        var originLabel = new TextBlock
+        {
+            Text = "YOU",
+            Foreground = new SolidColorBrush(WpfColor.FromRgb(0, 255, 180)),
+            FontSize = 9,
+            FontWeight = FontWeights.Bold
+        };
+        Canvas.SetLeft(originLabel, origin.X + 8);
+        Canvas.SetTop(originLabel, origin.Y - 6);
+        _mapLayer.Children.Add(originLabel);
     }
+
+    private void DrawLandmass()
+    {
+        // Simplified world land polygons as lat/lon coordinate arrays.
+        // Each entry is an array of (lat, lon) pairs forming a closed polygon.
+        // Accuracy is low-resolution (good enough for a radar-style map).
+        foreach (var polygon in WorldLandPolygons)
+        {
+            if (polygon.Length < 3) continue;
+
+            var pts = new PointCollection(polygon.Length);
+            foreach (var (lat, lon) in polygon)
+                pts.Add(LatLonToXY(lat, lon));
+
+            var shape = new Polygon
+            {
+                Points = pts,
+                Fill = new SolidColorBrush(WpfColor.FromArgb(70, 20, 55, 90)),
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(110, 30, 130, 180)),
+                StrokeThickness = 0.6
+            };
+            _mapLayer.Children.Add(shape);
+        }
+    }
+
+    // ─── Animation Tick (Layer 3 + 4) ────────────────────────────────────────────
+
+    private void OnAnimTick(object? sender, EventArgs e)
+    {
+        if (ActualWidth < 10 || ActualHeight < 10) return;
+
+        // Ensure sub-canvas sizes are up to date
+        if (_arcLayer.Width != ActualWidth)
+            OnResize();
+
+        // Get active connections snapshot (top 25 by download speed)
+        _lastSnapshot = Connections?
+            .Where(c => c.DownloadSpeed > 0 || c.UploadSpeed > 0)
+            .OrderByDescending(c => c.DownloadSpeed + c.UploadSpeed)
+            .Take(25)
+            .ToList() ?? new();
+
+        DrawArcs();
+        TickPackets();
+    }
+
+    private void DrawArcs()
+    {
+        _arcLayer.Children.Clear();
+
+        var origin = LatLonToXY(OriginLat, OriginLon);
+
+        foreach (var conn in _lastSnapshot)
+        {
+            var target = GetConnectionPoint(conn, origin);
+            double speed = conn.DownloadSpeed + conn.UploadSpeed;
+            double t = Math.Min(1.0, speed / 2_000_000.0); // 0..1 based on 2 MB/s max
+            var color = InterpolateColor(
+                WpfColor.FromRgb(0, 80, 200),    // slow: blue
+                WpfColor.FromRgb(0, 240, 100),   // fast: green
+                t);
+
+            byte alpha = (byte)(120 + 80 * t);
+            double thickness = 0.8 + 2.5 * t;
+
+            // Arc control point (pull upward toward top-center)
+            var ctrl = ArcControlPoint(origin, target);
+
+            // Draw arc
+            var geom = new PathGeometry();
+            var fig = new PathFigure { StartPoint = origin };
+            fig.Segments.Add(new QuadraticBezierSegment(ctrl, target, true));
+            geom.Figures.Add(fig);
+
+            _arcLayer.Children.Add(new Path
+            {
+                Data = geom,
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(alpha, color.R, color.G, color.B)),
+                StrokeThickness = thickness,
+                IsHitTestVisible = false
+            });
+
+            // Target dot
+            double dotR = 3 + 5 * t;
+            DrawDot(_arcLayer, target, dotR, WpfColor.FromArgb(alpha, color.R, color.G, color.B));
+            DrawPulseRing(_arcLayer, target, dotR * 3, WpfColor.FromArgb((byte)(alpha / 3), color.R, color.G, color.B), 0.8);
+
+            // Speed label
+            string label = BuildLabel(conn);
+            var tb = new TextBlock
+            {
+                Text = label,
+                Foreground = new SolidColorBrush(WpfColor.FromArgb(200, color.R, color.G, color.B)),
+                Background = new SolidColorBrush(WpfColor.FromArgb(90, 0, 0, 0)),
+                FontSize = 9.5,
+                Padding = new Thickness(2, 1, 2, 1)
+            };
+            Canvas.SetLeft(tb, target.X + dotR + 2);
+            Canvas.SetTop(tb, target.Y - 8);
+            _arcLayer.Children.Add(tb);
+
+            // Ensure a packet exists for this connection
+            if (!_packets.ContainsKey(conn.Id))
+            {
+                _packets[conn.Id] = new PacketDot
+                {
+                    ConnId = conn.Id,
+                    Progress = _rng.NextDouble(),
+                    Color = color
+                };
+            }
+            // Update packet path info
+            var pkt = _packets[conn.Id];
+            pkt.Origin = origin;
+            pkt.Target = target;
+            pkt.Control = ctrl;
+            pkt.Color = color;
+            pkt.Speed = 0.008 + 0.018 * t; // faster for high-speed connections
+        }
+
+        // Remove stale packets
+        var activeIds = _lastSnapshot.Select(c => c.Id).ToHashSet();
+        foreach (var key in _packets.Keys.Where(k => !activeIds.Contains(k)).ToList())
+            _packets.Remove(key);
+    }
+
+    private void TickPackets()
+    {
+        _dotLayer.Children.Clear();
+
+        foreach (var pkt in _packets.Values)
+        {
+            pkt.Progress = (pkt.Progress + pkt.Speed) % 1.0;
+
+            var pos = QuadBezierPoint(pkt.Origin, pkt.Control, pkt.Target, pkt.Progress);
+
+            // Bright moving dot
+            double r = 4;
+            DrawDot(_dotLayer, pos, r, WpfColor.FromArgb(230, pkt.Color.R, pkt.Color.G, pkt.Color.B));
+
+            // Soft glow halo
+            DrawDot(_dotLayer, pos, r * 2.5,
+                WpfColor.FromArgb(50, pkt.Color.R, pkt.Color.G, pkt.Color.B));
+        }
+    }
+
+    // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+    private WpfPoint GetConnectionPoint(ConnectionModel conn, WpfPoint fallback)
+    {
+        if (conn.Country != null)
+            return LatLonToXY(conn.Latitude, conn.Longitude);
+
+        // Deterministic fallback based on connection id hash
+        var hash = Math.Abs(conn.Id.GetHashCode());
+        double angle = (hash % 360) * Math.PI / 180.0;
+        double r = 80 + (hash % 120);
+        return new WpfPoint(fallback.X + Math.Cos(angle) * r, fallback.Y + Math.Sin(angle) * r);
+    }
+
+    private static WpfPoint ArcControlPoint(WpfPoint from, WpfPoint to)
+    {
+        double mx = (from.X + to.X) / 2;
+        double my = (from.Y + to.Y) / 2;
+
+        // Pull control point upward, proportional to distance
+        double dist = Math.Sqrt(Math.Pow(to.X - from.X, 2) + Math.Pow(to.Y - from.Y, 2));
+        double lift = Math.Min(dist * 0.4, 180);
+
+        return new WpfPoint(mx, my - lift);
+    }
+
+    private static WpfPoint QuadBezierPoint(WpfPoint p0, WpfPoint p1, WpfPoint p2, double t)
+    {
+        double u = 1 - t;
+        double x = u * u * p0.X + 2 * u * t * p1.X + t * t * p2.X;
+        double y = u * u * p0.Y + 2 * u * t * p1.Y + t * t * p2.Y;
+        return new WpfPoint(x, y);
+    }
+
+    private WpfPoint LatLonToXY(double lat, double lon)
+    {
+        double w = ActualWidth;
+        double h = ActualHeight;
+        double padX = w * MapPadX;
+        double padY = h * MapPadY;
+        double mapW = w - 2 * padX;
+        double mapH = h - 2 * padY;
+
+        double x = (lon + 180.0) / 360.0 * mapW + padX;
+        double y = (1.0 - (lat + 90.0) / 180.0) * mapH + padY;
+        return new WpfPoint(x, y);
+    }
+
+    private static void DrawDot(Canvas canvas, WpfPoint center, double radius, WpfColor color)
+    {
+        var e = new Ellipse
+        {
+            Width = radius * 2,
+            Height = radius * 2,
+            Fill = new SolidColorBrush(color),
+            IsHitTestVisible = false
+        };
+        Canvas.SetLeft(e, center.X - radius);
+        Canvas.SetTop(e, center.Y - radius);
+        canvas.Children.Add(e);
+    }
+
+    private static void DrawPulseRing(Canvas canvas, WpfPoint center, double radius, WpfColor color, double thickness)
+    {
+        var e = new Ellipse
+        {
+            Width = radius * 2,
+            Height = radius * 2,
+            Stroke = new SolidColorBrush(color),
+            StrokeThickness = thickness,
+            Fill = WpfBrushes.Transparent,
+            IsHitTestVisible = false
+        };
+        Canvas.SetLeft(e, center.X - radius);
+        Canvas.SetTop(e, center.Y - radius);
+        canvas.Children.Add(e);
+    }
+
+    private static WpfColor InterpolateColor(WpfColor a, WpfColor b, double t)
+    {
+        t = Math.Max(0, Math.Min(1, t));
+        return WpfColor.FromRgb(
+            (byte)(a.R + (b.R - a.R) * t),
+            (byte)(a.G + (b.G - a.G) * t),
+            (byte)(a.B + (b.B - a.B) * t));
+    }
+
+    private static string BuildLabel(ConnectionModel conn)
+    {
+        string name = string.IsNullOrWhiteSpace(conn.SiteName)
+            ? (string.IsNullOrWhiteSpace(conn.Process) ? conn.Host : conn.Process)
+            : conn.SiteName;
+        if (name.Length > 18) name = name[..16] + "..";
+
+        long dl = conn.DownloadSpeed;
+        string speed = dl >= 1024 * 1024
+            ? $"{dl / 1048576.0:F1}MB/s"
+            : $"{dl / 1024.0:F0}KB/s";
+
+        return $"{name}  ▼{speed}";
+    }
+
+    // ─── Collection Change Handling ──────────────────────────────────────────────
 
     private static void OnConnectionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
-        var control = (MapTrafficRadarControl)d;
-        if (e.OldValue is ObservableCollection<ConnectionModel> oldColl)
-        {
-            oldColl.CollectionChanged -= control.Connections_CollectionChanged;
-        }
-        if (e.NewValue is ObservableCollection<ConnectionModel> newColl)
-        {
-            newColl.CollectionChanged += control.Connections_CollectionChanged;
-        }
+        var ctrl = (MapTrafficRadarControl)d;
+        if (e.OldValue is ObservableCollection<ConnectionModel> old)
+            old.CollectionChanged -= ctrl.Connections_CollectionChanged;
+        if (e.NewValue is ObservableCollection<ConnectionModel> nw)
+            nw.CollectionChanged += ctrl.Connections_CollectionChanged;
     }
 
-    private void Connections_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
-    {
-    }
+    private void Connections_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) { }
 
-    private System.Windows.Point LatLonToXY(double lat, double lon)
-    {
-        // Simple Equirectangular projection mapping to Canvas dimensions
-        var mapWidth = ActualWidth * 0.9;
-        var mapHeight = ActualHeight * 0.9;
-        
-        // standard lon -180 to 180, lat -90 to 90
-        var x = (lon + 180) * (mapWidth / 360) + (ActualWidth * 0.05);
-        
-        // Latitude is flipped because Y axis goes down
-        var y = (-lat + 90) * (mapHeight / 180) + (ActualHeight * 0.05);
+    // ─── World Landmass Polygons ──────────────────────────────────────────────────
+    // Low-resolution outlines of the main continents as (latitude, longitude) tuples.
+    // Positive lat = North, positive lon = East.
 
-        return new System.Windows.Point(x, y);
-    }
-
-    private void AnimationTimer_Tick(object? sender, EventArgs e)
+    private static readonly (double lat, double lon)[][] WorldLandPolygons =
     {
-        if (ActualWidth == 0 || ActualHeight == 0 || Connections == null) return;
-        
-        DrawStaticMap(); // Clear dynamic items and redraw map
-        
-        // Assume origin is center of screen (or maybe actual local GeoIP. Hardcoding to arbitrary local point for demo)
-        var origin = new System.Windows.Point(ActualWidth / 2, ActualHeight / 2);
-        
-        var originNode = new Ellipse
+        // ── North America ──
+        new (double lat, double lon)[]
         {
-            Width = 10, Height = 10,
-            Fill = new SolidColorBrush(Colors.Cyan)
-        };
-        SetLeft(originNode, origin.X - 5);
-        SetTop(originNode, origin.Y - 5);
-        this.Children.Add(originNode);
+            (71, -141), (71, -120), (69, -105), (70, -85), (61, -75), (60, -65),
+            (47, -53), (44, -66), (35, -75), (25, -80), (25, -90), (15, -85),
+            (10, -85), (8, -77), (10, -75), (20, -87), (22, -97), (22, -105),
+            (30, -110), (32, -117), (37, -122), (48, -124), (50, -128),
+            (55, -130), (58, -137), (60, -145), (58, -152), (55, -162),
+            (60, -165), (64, -166), (67, -164), (70, -158), (71, -156),
+            (71, -141)
+        },
 
-        var activeConnections = Connections
-            .Where(c => c.DownloadSpeed > 0 || c.UploadSpeed > 0)
-            .OrderByDescending(c => c.DownloadSpeed)
-            .Take(20)
-            .ToList();
-
-        foreach (var conn in activeConnections)
+        // ── Greenland ──
+        new (double lat, double lon)[]
         {
-            // If location isn't resolved yet, default to a random local perimeter
-            var targetX = origin.X;
-            var targetY = origin.Y;
+            (83, -30), (83, -60), (76, -73), (68, -54), (60, -43), (61, -48),
+            (65, -37), (72, -22), (77, -18), (83, -30)
+        },
 
-            if (conn.Country != null)
-            {
-                var pt = LatLonToXY(conn.Latitude, conn.Longitude);
-                targetX = pt.X;
-                targetY = pt.Y;
-            }
-            else
-            {
-                // Fallback circular cluster if no IP geo available
-                var hash = Math.Abs(conn.Id.GetHashCode());
-                double angle = (hash % 360) * Math.PI / 180.0;
-                targetX = origin.X + Math.Cos(angle) * 100;
-                targetY = origin.Y + Math.Sin(angle) * 100;
-            }
+        // ── South America ──
+        new (double lat, double lon)[]
+        {
+            (12, -71), (10, -63), (8, -60), (5, -53), (4, -52), (0, -50),
+            (-5, -35), (-12, -37), (-23, -43), (-34, -53), (-52, -68),
+            (-55, -67), (-55, -64), (-42, -63), (-38, -57), (-35, -57),
+            (-30, -50), (-20, -40), (-10, -37), (-3, -40), (-1, -50),
+            (4, -52), (7, -60), (10, -63), (12, -71)
+        },
 
-            // Draw Parabolic curve
-            var path = new Path();
-            path.Stroke = new SolidColorBrush(System.Windows.Media.Color.FromArgb(150, 0, 255, 100));
-            path.StrokeThickness = Math.Max(1, Math.Min(4, conn.DownloadSpeed / 100000.0)); // Scale with speed
+        // ── Europe (simplified) ──
+        new (double lat, double lon)[]
+        {
+            (71, 28), (70, 18), (63, 5), (58, 5), (51, 2), (48, -5),
+            (43, -9), (36, -9), (36, -5), (38, 0), (43, 3), (44, 8),
+            (43, 13), (40, 18), (41, 20), (42, 28), (45, 30), (46, 30),
+            (48, 22), (50, 22), (54, 18), (56, 21), (59, 24), (60, 25),
+            (60, 30), (65, 30), (68, 28), (70, 30), (71, 28)
+        },
 
-            var geom = new PathGeometry();
-            var figure = new PathFigure { StartPoint = origin };
-            
-            // Calculate a control point to make it arc up
-            var midX = (origin.X + targetX) / 2;
-            var midY = (origin.Y + targetY) / 2 - 50; // Pull Arc upwards
-            
-            figure.Segments.Add(new QuadraticBezierSegment(new System.Windows.Point(midX, midY), new System.Windows.Point(targetX, targetY), true));
-            geom.Figures.Add(figure);
-            path.Data = geom;
-            
-            this.Children.Add(path);
+        // ── Africa ──
+        new (double lat, double lon)[]
+        {
+            (37, 10), (37, 9), (33, 10), (25, 37), (12, 44), (11, 43),
+            (8, 42), (2, 42), (-5, 40), (-12, 40), (-26, 33), (-34, 26),
+            (-34, 18), (-29, 17), (-18, 12), (-7, 12), (5, 2), (5, -5),
+            (10, -15), (15, -17), (20, -17), (28, -13), (35, -5), (37, 10)
+        },
 
-            // Draw glowing target dot
-            var size = 4 + Math.Min(10, conn.DownloadSpeed / 100000.0);
-            var dot = new Ellipse
-            {
-                Width = size, Height = size,
-                Fill = new SolidColorBrush(Colors.LightGreen)
-            };
-            SetLeft(dot, targetX - size/2);
-            SetTop(dot, targetY - size/2);
-            this.Children.Add(dot);
+        // ── Asia (main body, very simplified) ──
+        new (double lat, double lon)[]
+        {
+            (71, 28), (71, 50), (68, 60), (66, 70), (68, 80), (70, 100),
+            (72, 110), (70, 130), (67, 140), (60, 140), (60, 150), (52, 140),
+            (46, 135), (42, 130), (38, 121), (30, 121), (23, 116), (22, 113),
+            (15, 108), (10, 104), (5, 102), (1, 104), (5, 100), (10, 99),
+            (18, 100), (22, 98), (28, 98), (27, 88), (22, 88), (20, 80),
+            (14, 80), (8, 77), (8, 78), (12, 80), (22, 68), (28, 62),
+            (24, 58), (24, 52), (27, 50), (30, 48), (30, 38), (37, 36),
+            (37, 28), (41, 26), (42, 28), (45, 30), (50, 30), (55, 38),
+            (60, 42), (65, 42), (68, 50), (71, 50), (71, 28)
+        },
 
-            // Detailed text label as requested
-            var speedStr = conn.DownloadSpeed > 1024 * 1024 
-                ? $"{(conn.DownloadSpeed / 1024.0 / 1024.0):F1} MB/s" 
-                : $"{(conn.DownloadSpeed / 1024.0):F1} KB/s";
-            
-            // Use SiteName (which captures YouTube etc) or process name if process missing
-            string labelName = string.IsNullOrWhiteSpace(conn.SiteName) ? (string.IsNullOrWhiteSpace(conn.Process) ? conn.Host : conn.Process) : conn.SiteName;
-            if (labelName.Length > 20) labelName = labelName.Substring(0, 18) + "..";
+        // ── Japan (simplified) ──
+        new (double lat, double lon)[]
+        {
+            (31, 131), (33, 132), (35, 137), (35, 140), (37, 141),
+            (41, 141), (43, 145), (44, 145), (44, 141), (40, 140),
+            (36, 138), (34, 131), (31, 131)
+        },
 
-            var label = new TextBlock
-            {
-                Text = $"{labelName} ▼ {speedStr}",
-                Foreground = new SolidColorBrush(Colors.White),
-                Background = new SolidColorBrush(System.Windows.Media.Color.FromArgb(100, 0,0,0)), // semi transparent bg for readability
-                FontSize = 10,
-                Padding = new Thickness(2)
-            };
-            
-            SetLeft(label, targetX + size);
-            SetTop(label, targetY - 10);
-            this.Children.Add(label);
-        }
+        // ── Australia ──
+        new (double lat, double lon)[]
+        {
+            (-14, 126), (-12, 130), (-12, 136), (-18, 140), (-24, 150),
+            (-38, 148), (-38, 145), (-36, 136), (-32, 133), (-32, 116),
+            (-24, 114), (-18, 122), (-14, 126)
+        },
+
+        // ── New Zealand (North Island simplified) ──
+        new (double lat, double lon)[]
+        {
+            (-34, 173), (-37, 175), (-41, 175), (-41, 172), (-34, 173)
+        },
+
+        // ── British Isles ──
+        new (double lat, double lon)[]
+        {
+            (58, -5), (58, -3), (56, -2), (54, -3), (51, -3),
+            (50, -5), (52, -5), (54, -6), (55, -6), (56, -6),
+            (58, -5)
+        },
+
+        // ── Indonesia / SE Asia islands (very rough) ──
+        new (double lat, double lon)[]
+        {
+            (5, 95), (4, 98), (2, 100), (0, 102), (-2, 104), (-6, 107),
+            (-8, 115), (-8, 118), (-8, 124), (-4, 122), (-2, 120),
+            (0, 119), (4, 118), (6, 116), (7, 110), (5, 104), (5, 95)
+        },
+
+        // ── Philippines (rough outline) ──
+        new (double lat, double lon)[]
+        {
+            (18, 120), (20, 122), (18, 123), (12, 125), (8, 124),
+            (8, 123), (10, 122), (12, 120), (15, 120), (18, 120)
+        },
+
+        // ── Iceland ──
+        new (double lat, double lon)[]
+        {
+            (66, -24), (66, -14), (64, -13), (63, -18), (64, -22), (66, -24)
+        },
+
+        // ── Scandinavia ──
+        new (double lat, double lon)[]
+        {
+            (58, 5), (56, 8), (57, 10), (58, 12), (57, 12), (55, 14),
+            (56, 15), (57, 18), (60, 18), (60, 25), (65, 25), (68, 18),
+            (70, 18), (71, 28), (70, 30), (68, 28), (65, 30),
+            (63, 28), (62, 26), (63, 22), (65, 14), (65, 10),
+            (63, 5), (58, 5)
+        },
+
+        // ── Sri Lanka ──
+        new (double lat, double lon)[]
+        {
+            (10, 80), (9, 81), (7, 81), (6, 80), (8, 79), (10, 80)
+        },
+
+        // ── Taiwan ──
+        new (double lat, double lon)[]
+        {
+            (25, 121), (25, 122), (23, 122), (22, 121), (23, 120), (25, 121)
+        },
+    };
+
+    // ─── Packet dot state ────────────────────────────────────────────────────────
+
+    private sealed class PacketDot
+    {
+        public string ConnId = "";
+        public double Progress;   // 0..1 along arc
+        public double Speed;
+        public WpfPoint Origin;
+        public WpfPoint Target;
+        public WpfPoint Control;
+        public WpfColor Color;
     }
 }
