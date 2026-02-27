@@ -37,6 +37,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private bool _enableSystemProxy;
     private string _statusText;
+    private int _mainTabSelectedIndex;
     private string? _subscriptionUrl;
     private string _nodeImportText;
     private readonly ObservableCollection<ProxyNodeModel> _nodes;
@@ -166,6 +167,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             OnPropertyChanged();
             _ = PersistSelectionAsync();
         }
+    }
+
+    public int MainTabSelectedIndex
+    {
+        get => _mainTabSelectedIndex;
+        set { if (_mainTabSelectedIndex != value) { _mainTabSelectedIndex = value; OnPropertyChanged(); } }
     }
 
     public string? SubscriptionUrl

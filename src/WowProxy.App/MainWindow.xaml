@@ -50,7 +50,7 @@
         </Border>
 
         <!-- 主内容区 -->
-        <TabControl Grid.Row="1" Margin="12">
+        <TabControl Grid.Row="1" Margin="12" SelectedIndex="{Binding MainTabSelectedIndex}">
             <TabItem Header="仪表盘">
                 <Grid Margin="0,12,0,0">
                     <Grid.ColumnDefinitions>
@@ -249,6 +249,48 @@
             <TabItem Header="全球雷达">
                 <Grid DataContext="{Binding Dashboard}">
                     <controls:MapTrafficRadarControl Connections="{Binding Connections}" />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="进程流量">
+                <Grid DataContext="{Binding Dashboard}">
+                    <DataGrid
+                        ItemsSource="{Binding ProcessTraffic}"
+                        AutoGenerateColumns="False"
+                        IsReadOnly="True"
+                        HeadersVisibility="Column"
+                        GridLinesVisibility="Horizontal"
+                        BorderThickness="1"
+                        BorderBrush="#ABADB3">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="进程" Binding="{Binding ProcessName}" Width="150">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="ToolTip" Value="{Binding ProcessPath}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="活跃" Binding="{Binding ActiveConnections}" Width="50"/>
+                            <DataGridTextColumn Header="当前上行" Binding="{Binding CurrentUploadSpeedText}" Width="90"/>
+                            <DataGridTextColumn Header="当前下行" Binding="{Binding CurrentDownloadSpeedText}" Width="90"/>
+                            <DataGridTextColumn Header="累计上行" Binding="{Binding CumulativeUploadText}" Width="90"/>
+                            <DataGridTextColumn Header="累计下行" Binding="{Binding CumulativeDownloadText}" Width="90"/>
+                            <DataGridTextColumn Header="主要规则" Binding="{Binding MainRule}" Width="100"/>
+                            <DataGridTemplateColumn Header="操作" Width="100">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="查看连接" 
+                                                Command="{Binding DataContext.FilterByProcessCommand, RelativeSource={RelativeSource FindAncestor, AncestorType={x:Type DataGrid}}}" 
+                                                CommandParameter="{Binding ProcessName}"
+                                                Padding="12,2" 
+                                                Background="Transparent"
+                                                BorderBrush="#DDD"
+                                                Cursor="Hand" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
                 </Grid>
             </TabItem>
 

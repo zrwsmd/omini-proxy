@@ -189,34 +189,42 @@ public sealed class SingBoxConfigFactoryV2
     }
 
     /// <summary>
-    /// 为白名单进程生成路由规则：
-    /// 将这些进程被 TUN 捕获的所有流量直连（不经过代理节点）。
-    /// 通过 inbound=tun-in 限制，只对 TUN 捕获的流量生效；
-    /// 如果同时开启了系统代理，进程的 HTTP 请求会走 127.0.0.1:mixed_port（mixed-in），
-    /// 不受此规则影响，仍然正常走代理翻墙。
+    /// 为进程生成路由规则：
+    /// 1. 强制占位规则，使 sing-box 对所有连接开启进程匹配（Dashboard 展示进程名所必需）。
+    /// 2. 为用户配置的白名单进程生成规则：将被 TUN 捕获的所有流量直连（不经过代理节点）。
     /// </summary>
     private static object[] BuildBypassTunRules(AppSettings settings)
     {
+        var rules = new List<object>();
+
+        // 核心机制：在路由规则中添加一个涉及 process_name 的规则，这会强制 sing-box 对连接进行进程溯源（Process Matching）。
+        // 如果没有任何路由规则涉及进程名，Dashboard 的“进程”列将显示为空。
+        // 此占位规则不限制入站（inbound），以便同时修复 TUN 和 Mixed (系统代理) 入站的进程名显示问题。
+        // 由于使用了不存且带有非法字符的名称，它永远不会真正匹配到任何进程，仅用于触发 sing-box 的溯源逻辑。
+        rules.Add(new
+        {
+            process_name = new[] { "placeholder-to-force-process-matching-for-dashboard.exe" },
+            outbound = "direct"
+        });
+
         var bypassProcesses = settings.BypassTunProcesses?
             .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToArray();
 
-        if (bypassProcesses is null || bypassProcesses.Length == 0)
+        if (bypassProcesses is not null && bypassProcesses.Length > 0)
         {
-            return Array.Empty<object>();
-        }
-
-        // 仅对 tun-in 入站的流量生效，系统代理的流量不受影响
-        return new object[]
-        {
-            new
+            // 对于用户明确填写的直连进程，维持原有设计逻辑：
+            // 仅对被 TUN 捕获的流量直连（inbound=tun-in），若走系统代理（mixed-in）则仍然正常代理。
+            rules.Add(new
             {
                 process_name = bypassProcesses,
                 inbound = new[] { "tun-in" },
                 outbound = "direct"
-            }
-        };
+            });
+        }
+
+        return rules.ToArray();
     }
 
     private static object BuildTunDns()
