@@ -557,7 +557,7 @@ public class MapTrafficRadarControl : Canvas
         ("Africa", 8, 20),
         ("Asia", 43, 90),
         ("Oceania", -23, 137),
-        ("Antarctica", -77, 0),
+
     };
 
     private static readonly (double lat, double lon)[][] WorldLandPolygons =
@@ -730,15 +730,7 @@ public class MapTrafficRadarControl : Canvas
             (-51, -61), (-51, -57), (-53, -57), (-53, -61), (-51, -61)
         },
 
-        // ── Antarctica (stylized belt) ──
-        new (double lat, double lon)[]
-        {
-            (-66, -179), (-68, -160), (-70, -130), (-71, -100), (-72, -70),
-            (-73, -40), (-74, -10), (-73, 20), (-72, 50), (-71, 80),
-            (-70, 110), (-69, 140), (-68, 165), (-66, 179),
-            (-80, 179), (-82, 120), (-83, 60), (-84, 0), (-83, -60),
-            (-82, -120), (-80, -179), (-66, -179)
-        },
+
     };
 
     // ─── Packet dot state ────────────────────────────────────────────────────────
