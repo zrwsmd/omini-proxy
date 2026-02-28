@@ -678,34 +678,7 @@ public class MapTrafficRadarControl : Canvas
             (66, -24), (66, -14), (64, -13), (63, -18), (64, -22), (66, -24)
         },
 
-        // ── Scandinavia ──
-        new (double lat, double lon)[]
-        {
-            (58, 5), (56, 8), (57, 10), (58, 12), (57, 12), (55, 14),
-            (56, 15), (57, 18), (60, 18), (60, 25), (65, 25), (68, 18),
-            (70, 18), (71, 28), (70, 30), (68, 28), (65, 30),
-            (63, 28), (62, 26), (63, 22), (65, 14), (65, 10),
-            (63, 5), (58, 5)
-        },
 
-        // ── Sri Lanka ──
-        new (double lat, double lon)[]
-        {
-            (10, 80), (9, 81), (7, 81), (6, 80), (8, 79), (10, 80)
-        },
-
-        // ── Taiwan ──
-        new (double lat, double lon)[]
-        {
-            (25, 121), (25, 122), (23, 122), (22, 121), (23, 120), (25, 121)
-        },
-
-        // ── Korean Peninsula ──
-        new (double lat, double lon)[]
-        {
-            (43, 130), (42, 129), (40, 128), (38, 127), (36, 126), (34, 127),
-            (35, 129), (37, 130), (40, 130), (43, 130)
-        },
 
         // ── Madagascar ──
         new (double lat, double lon)[]
@@ -739,36 +712,10 @@ public class MapTrafficRadarControl : Canvas
             (20, -74), (20, -70), (18, -68), (17, -71), (18, -74), (20, -74)
         },
 
-        // ── Iceland (east refinement) ──
-        new (double lat, double lon)[]
-        {
-            (66, -17), (66, -13), (65, -12), (64, -14), (65, -17), (66, -17)
-        },
-
         // ── Svalbard ──
         new (double lat, double lon)[]
         {
             (80, 10), (80, 22), (78, 25), (77, 18), (78, 10), (80, 10)
-        },
-
-        // ── Mediterranean islands (Sicily/Sardinia/Corsica rough) ──
-        new (double lat, double lon)[]
-        {
-            (43, 8), (43, 10), (42, 10), (41, 9), (42, 8), (43, 8)
-        },
-        new (double lat, double lon)[]
-        {
-            (41, 8), (41, 10), (39, 10), (39, 8), (41, 8)
-        },
-        new (double lat, double lon)[]
-        {
-            (38, 12), (38, 15), (36, 15), (36, 12), (38, 12)
-        },
-
-        // ── British Isles (Ireland refinement) ──
-        new (double lat, double lon)[]
-        {
-            (55, -10), (55, -7), (53, -6), (51, -7), (52, -10), (55, -10)
         },
 
         // ── Hawaiian Islands (very rough chain) ──
@@ -781,12 +728,6 @@ public class MapTrafficRadarControl : Canvas
         new (double lat, double lon)[]
         {
             (-51, -61), (-51, -57), (-53, -57), (-53, -61), (-51, -61)
-        },
-
-        // ── Philippines eastern refinement ──
-        new (double lat, double lon)[]
-        {
-            (14, 124), (16, 125), (13, 126), (11, 125), (12, 123), (14, 124)
         },
 
         // ── Antarctica (stylized belt) ──
