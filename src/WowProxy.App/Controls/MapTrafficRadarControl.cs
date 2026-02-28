@@ -163,8 +163,14 @@ public class MapTrafficRadarControl : Canvas
             });
         }
 
+        // --- Ocean basins + labels ---
+        DrawOceanBasins();
+
         // --- World map landmass ---
         DrawLandmass();
+
+        // --- Geographic labels ---
+        DrawGeographyLabels();
 
         // --- Origin marker (local machine) ---
         var origin = LatLonToXY(OriginLat, OriginLon);
@@ -200,11 +206,66 @@ public class MapTrafficRadarControl : Canvas
             var shape = new Polygon
             {
                 Points = pts,
-                Fill = new SolidColorBrush(WpfColor.FromArgb(70, 20, 55, 90)),
-                Stroke = new SolidColorBrush(WpfColor.FromArgb(110, 30, 130, 180)),
-                StrokeThickness = 0.6
+                Fill = new SolidColorBrush(WpfColor.FromArgb(76, 20, 55, 90)),
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(118, 30, 130, 180)),
+                StrokeThickness = 0.65
             };
             _mapLayer.Children.Add(shape);
+        }
+    }
+
+    private void DrawOceanBasins()
+    {
+        foreach (var basin in OceanBasins)
+        {
+            if (basin.Polygon.Length < 3) continue;
+
+            var pts = new PointCollection(basin.Polygon.Length);
+            foreach (var (lat, lon) in basin.Polygon)
+                pts.Add(LatLonToXY(lat, lon));
+
+            _mapLayer.Children.Add(new Polygon
+            {
+                Points = pts,
+                Fill = new SolidColorBrush(WpfColor.FromArgb(34, 0, 120, 170)),
+                Stroke = new SolidColorBrush(WpfColor.FromArgb(42, 0, 170, 210)),
+                StrokeThickness = 0.45,
+                IsHitTestVisible = false
+            });
+
+            var labelPos = LatLonToXY(basin.LabelLat, basin.LabelLon);
+            var label = new TextBlock
+            {
+                Text = basin.Name,
+                Foreground = new SolidColorBrush(WpfColor.FromArgb(128, 120, 220, 240)),
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Opacity = 0.8,
+                IsHitTestVisible = false
+            };
+            Canvas.SetLeft(label, labelPos.X - basin.Name.Length * 2.8);
+            Canvas.SetTop(label, labelPos.Y - 7);
+            _mapLayer.Children.Add(label);
+        }
+    }
+
+    private void DrawGeographyLabels()
+    {
+        foreach (var continent in Continents)
+        {
+            var pos = LatLonToXY(continent.LabelLat, continent.LabelLon);
+            var tb = new TextBlock
+            {
+                Text = continent.Name,
+                Foreground = new SolidColorBrush(WpfColor.FromArgb(150, 150, 220, 255)),
+                FontSize = 10.5,
+                FontWeight = FontWeights.Bold,
+                IsHitTestVisible = false
+            };
+
+            Canvas.SetLeft(tb, pos.X - continent.Name.Length * 3.0);
+            Canvas.SetTop(tb, pos.Y - 8);
+            _mapLayer.Children.Add(tb);
         }
     }
 
@@ -448,6 +509,47 @@ public class MapTrafficRadarControl : Canvas
     // Low-resolution outlines of the main continents as (latitude, longitude) tuples.
     // Positive lat = North, positive lon = East.
 
+    private static readonly (string Name, double LabelLat, double LabelLon)[] Continents =
+    {
+        ("North America", 48, -103),
+        ("South America", -18, -60),
+        ("Europe", 53, 16),
+        ("Africa", 8, 20),
+        ("Asia", 43, 90),
+        ("Oceania", -23, 137),
+        ("Antarctica", -77, 0),
+    };
+
+    private static readonly (string Name, double LabelLat, double LabelLon, (double lat, double lon)[] Polygon)[] OceanBasins =
+    {
+        ("Pacific Ocean", 3, -155, new (double lat, double lon)[]
+        {
+            (58, -179), (58, -130), (42, -108), (20, -93), (2, -83), (-25, -76),
+            (-52, -74), (-58, -112), (-60, -155), (-56, -179), (58, -179)
+        }),
+        ("Atlantic Ocean", 8, -25, new (double lat, double lon)[]
+        {
+            (72, -72), (72, 12), (58, 10), (42, -7), (18, -16), (-6, -18),
+            (-26, -15), (-48, -8), (-58, -20), (-58, -56), (-34, -62),
+            (0, -60), (30, -58), (52, -58), (72, -72)
+        }),
+        ("Indian Ocean", -15, 78, new (double lat, double lon)[]
+        {
+            (30, 32), (30, 114), (10, 112), (-6, 109), (-16, 103), (-32, 95),
+            (-44, 76), (-44, 42), (-24, 34), (-2, 38), (20, 42), (30, 32)
+        }),
+        ("Arctic Ocean", 77, 15, new (double lat, double lon)[]
+        {
+            (84, -179), (84, 179), (72, 179), (70, 120), (72, 70), (72, 20),
+            (70, -20), (72, -70), (70, -125), (72, -170), (84, -179)
+        }),
+        ("Southern Ocean", -63, 10, new (double lat, double lon)[]
+        {
+            (-58, -179), (-58, 179), (-72, 179), (-74, 120), (-72, 40),
+            (-74, -40), (-72, -120), (-58, -179)
+        }),
+    };
+
     private static readonly (double lat, double lon)[][] WorldLandPolygons =
     {
         // ── North America ──
@@ -583,6 +685,16 @@ public class MapTrafficRadarControl : Canvas
         new (double lat, double lon)[]
         {
             (25, 121), (25, 122), (23, 122), (22, 121), (23, 120), (25, 121)
+        },
+
+        // ── Antarctica (stylized belt) ──
+        new (double lat, double lon)[]
+        {
+            (-66, -179), (-68, -160), (-70, -130), (-71, -100), (-72, -70),
+            (-73, -40), (-74, -10), (-73, 20), (-72, 50), (-71, 80),
+            (-70, 110), (-69, 140), (-68, 165), (-66, 179),
+            (-80, 179), (-82, 120), (-83, 60), (-84, 0), (-83, -60),
+            (-82, -120), (-80, -179), (-66, -179)
         },
     };
 
