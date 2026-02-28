@@ -777,12 +777,6 @@ public class MapTrafficRadarControl : Canvas
             (22, -160), (22, -157), (21, -155), (19, -155), (19, -157), (20, -160), (22, -160)
         },
 
-        // ── Aleutian Islands (very rough arc) ──
-        new (double lat, double lon)[]
-        {
-            (55, -172), (54, -176), (53, -178), (52, 178), (52, 172), (53, 168), (54, 170), (55, -172)
-        },
-
         // ── Falkland Islands ──
         new (double lat, double lon)[]
         {
