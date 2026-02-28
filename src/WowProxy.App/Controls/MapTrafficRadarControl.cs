@@ -74,7 +74,7 @@ public class MapTrafficRadarControl : Canvas
     public MapTrafficRadarControl()
     {
         ClipToBounds = true;
-        Background = new SolidColorBrush(WpfColor.FromRgb(8, 12, 26));
+        Background = new SolidColorBrush(WpfColor.FromRgb(3, 10, 30));
 
         // Stack layers
         Children.Add(_mapLayer);
@@ -119,17 +119,22 @@ public class MapTrafficRadarControl : Canvas
         double w = ActualWidth;
         double h = ActualHeight;
 
-        // --- Background gradient ---
-        var bgRect = new WpfRectangle
-        {
-            Width = w,
-            Height = h,
-            Fill = new LinearGradientBrush(
-                WpfColor.FromRgb(6, 10, 22),
-                WpfColor.FromRgb(12, 18, 40),
-                new WpfPoint(0, 0),
-                new WpfPoint(0, 1))
-        };
+          // --- Background gradient ---
+          var bgGradient = new LinearGradientBrush
+          {
+              StartPoint = new WpfPoint(0, 0),
+              EndPoint = new WpfPoint(0, 1)
+          };
+          bgGradient.GradientStops.Add(new GradientStop(WpfColor.FromRgb(2, 9, 30), 0.0));
+          bgGradient.GradientStops.Add(new GradientStop(WpfColor.FromRgb(4, 18, 48), 0.55));
+          bgGradient.GradientStops.Add(new GradientStop(WpfColor.FromRgb(4, 13, 38), 1.0));
+
+          var bgRect = new WpfRectangle
+          {
+              Width = w,
+              Height = h,
+              Fill = bgGradient
+          };
         _mapLayer.Children.Add(bgRect);
 
         // --- Grid lines ---
@@ -139,13 +144,13 @@ public class MapTrafficRadarControl : Canvas
             var pt1 = LatLonToXY(lat, -180);
             var pt2 = LatLonToXY(lat, 180);
             bool isEquator = lat == 0;
-            _mapLayer.Children.Add(new Line
-            {
-                X1 = pt1.X, Y1 = pt1.Y, X2 = pt2.X, Y2 = pt2.Y,
-                Stroke = new SolidColorBrush(WpfColor.FromArgb(isEquator ? (byte)45 : (byte)20, 0, 220, 120)),
-                StrokeThickness = isEquator ? 1.0 : 0.5,
-                StrokeDashArray = isEquator ? null : new DoubleCollection { 4, 6 }
-            });
+              _mapLayer.Children.Add(new Line
+              {
+                  X1 = pt1.X, Y1 = pt1.Y, X2 = pt2.X, Y2 = pt2.Y,
+                  Stroke = new SolidColorBrush(WpfColor.FromArgb(isEquator ? (byte)88 : (byte)38, 18, 174, 204)),
+                  StrokeThickness = isEquator ? 1.2 : 0.55,
+                  StrokeDashArray = isEquator ? null : new DoubleCollection { 4, 6 }
+              });
         }
 
         // Longitude lines every 30°
@@ -154,34 +159,35 @@ public class MapTrafficRadarControl : Canvas
             var pt1 = LatLonToXY(90, lon);
             var pt2 = LatLonToXY(-90, lon);
             bool isPrime = lon == 0;
-            _mapLayer.Children.Add(new Line
-            {
-                X1 = pt1.X, Y1 = pt1.Y, X2 = pt2.X, Y2 = pt2.Y,
-                Stroke = new SolidColorBrush(WpfColor.FromArgb(isPrime ? (byte)45 : (byte)15, 0, 220, 120)),
-                StrokeThickness = isPrime ? 1.0 : 0.5,
-                StrokeDashArray = isPrime ? null : new DoubleCollection { 4, 6 }
-            });
+              _mapLayer.Children.Add(new Line
+              {
+                  X1 = pt1.X, Y1 = pt1.Y, X2 = pt2.X, Y2 = pt2.Y,
+                  Stroke = new SolidColorBrush(WpfColor.FromArgb(isPrime ? (byte)84 : (byte)34, 18, 174, 204)),
+                  StrokeThickness = isPrime ? 1.1 : 0.5,
+                  StrokeDashArray = isPrime ? null : new DoubleCollection { 4, 6 }
+              });
         }
 
-        // --- Ocean basins + labels ---
-        DrawOceanBasins();
+          // --- Single global ocean tint (clean, no basin intersections) ---
+          DrawOceanBase();
 
-        // --- World map landmass ---
-        DrawLandmass();
+          // --- World map landmass ---
+            DrawLandmass();
+
 
         // --- Geographic labels ---
         DrawGeographyLabels();
 
         // --- Origin marker (local machine) ---
         var origin = LatLonToXY(OriginLat, OriginLon);
-        DrawPulseRing(_mapLayer, origin, 14, WpfColor.FromRgb(0, 255, 180), 2.0);
-        DrawDot(_mapLayer, origin, 5, WpfColor.FromRgb(0, 255, 180));
+          DrawPulseRing(_mapLayer, origin, 14, WpfColor.FromRgb(0, 255, 210), 1.8);
+          DrawDot(_mapLayer, origin, 5, WpfColor.FromRgb(0, 204, 255));
 
         // Label
         var originLabel = new TextBlock
         {
-            Text = "YOU",
-            Foreground = new SolidColorBrush(WpfColor.FromRgb(0, 255, 180)),
+              Text = "YOU",
+              Foreground = new SolidColorBrush(WpfColor.FromRgb(74, 220, 255)),
             FontSize = 9,
             FontWeight = FontWeights.Bold
         };
@@ -190,64 +196,58 @@ public class MapTrafficRadarControl : Canvas
         _mapLayer.Children.Add(originLabel);
     }
 
-    private void DrawLandmass()
-    {
-        // Simplified world land polygons as lat/lon coordinate arrays.
-        // Each entry is an array of (lat, lon) pairs forming a closed polygon.
-        // Accuracy is low-resolution (good enough for a radar-style map).
-        foreach (var polygon in WorldLandPolygons)
-        {
-            if (polygon.Length < 3) continue;
+      private void DrawOceanBase()
+      {
+          // One global ocean body to keep the scene clean while preserving cyber depth.
+          var oceanGradient = new LinearGradientBrush
+          {
+              StartPoint = new WpfPoint(0, 0),
+              EndPoint = new WpfPoint(0, 1)
+          };
+          oceanGradient.GradientStops.Add(new GradientStop(WpfColor.FromArgb(102, 8, 58, 108), 0.00));
+          oceanGradient.GradientStops.Add(new GradientStop(WpfColor.FromArgb(90, 6, 44, 96), 0.52));
+          oceanGradient.GradientStops.Add(new GradientStop(WpfColor.FromArgb(112, 5, 36, 84), 1.00));
 
-            var pts = new PointCollection(polygon.Length);
-            foreach (var (lat, lon) in polygon)
-                pts.Add(LatLonToXY(lat, lon));
+          var northWest = LatLonToXY(64, -180);
+          var northEast = LatLonToXY(64, 180);
+          var southEast = LatLonToXY(-66, 180);
+          var southWest = LatLonToXY(-66, -180);
 
-            var shape = new Polygon
-            {
-                Points = pts,
-                Fill = new SolidColorBrush(WpfColor.FromArgb(76, 20, 55, 90)),
-                Stroke = new SolidColorBrush(WpfColor.FromArgb(118, 30, 130, 180)),
-                StrokeThickness = 0.65
-            };
-            _mapLayer.Children.Add(shape);
-        }
-    }
+          var ocean = new Polygon
+          {
+              Points = new PointCollection { northWest, northEast, southEast, southWest },
+              Fill = oceanGradient,
+              Stroke = new SolidColorBrush(WpfColor.FromArgb(52, 18, 174, 204)),
+              StrokeThickness = 0.65,
+              IsHitTestVisible = false
+          };
 
-    private void DrawOceanBasins()
-    {
-        foreach (var basin in OceanBasins)
-        {
-            if (basin.Polygon.Length < 3) continue;
+          _mapLayer.Children.Add(ocean);
+      }
 
-            var pts = new PointCollection(basin.Polygon.Length);
-            foreach (var (lat, lon) in basin.Polygon)
-                pts.Add(LatLonToXY(lat, lon));
+      private void DrawLandmass()
+      {
+          foreach (var polygon in WorldLandPolygons)
+          {
+              if (polygon.Length < 3) continue;
 
-            _mapLayer.Children.Add(new Polygon
-            {
-                Points = pts,
-                Fill = new SolidColorBrush(WpfColor.FromArgb(34, 0, 120, 170)),
-                Stroke = new SolidColorBrush(WpfColor.FromArgb(42, 0, 170, 210)),
-                StrokeThickness = 0.45,
-                IsHitTestVisible = false
-            });
+              var pts = new PointCollection(polygon.Length);
+              foreach (var (lat, lon) in polygon)
+                  pts.Add(LatLonToXY(lat, lon));
 
-            var labelPos = LatLonToXY(basin.LabelLat, basin.LabelLon);
-            var label = new TextBlock
-            {
-                Text = basin.Name,
-                Foreground = new SolidColorBrush(WpfColor.FromArgb(128, 120, 220, 240)),
-                FontSize = 10,
-                FontWeight = FontWeights.SemiBold,
-                Opacity = 0.8,
-                IsHitTestVisible = false
-            };
-            Canvas.SetLeft(label, labelPos.X - basin.Name.Length * 2.8);
-            Canvas.SetTop(label, labelPos.Y - 7);
-            _mapLayer.Children.Add(label);
-        }
-    }
+              var (fillColor, strokeColor) = GetLandStyleForPolygon(polygon);
+              var shape = new Polygon
+              {
+                  Points = pts,
+                  Fill = new SolidColorBrush(fillColor),
+                  Stroke = new SolidColorBrush(strokeColor),
+                  StrokeThickness = 0.75,
+                  IsHitTestVisible = false
+              };
+              _mapLayer.Children.Add(shape);
+          }
+      }
+
 
     private void DrawGeographyLabels()
     {
@@ -257,7 +257,7 @@ public class MapTrafficRadarControl : Canvas
             var tb = new TextBlock
             {
                 Text = continent.Name,
-                Foreground = new SolidColorBrush(WpfColor.FromArgb(150, 150, 220, 255)),
+                Foreground = new SolidColorBrush(GetContinentLabelColor(continent.Name)),
                 FontSize = 10.5,
                 FontWeight = FontWeights.Bold,
                 IsHitTestVisible = false
@@ -477,22 +477,62 @@ public class MapTrafficRadarControl : Canvas
             (byte)(a.B + (b.B - a.B) * t));
     }
 
-    private static string BuildLabel(ConnectionModel conn)
-    {
-        string name = string.IsNullOrWhiteSpace(conn.SiteName)
-            ? (string.IsNullOrWhiteSpace(conn.Process) ? conn.Host : conn.Process)
-            : conn.SiteName;
-        if (name.Length > 18) name = name[..16] + "..";
+      private static string BuildLabel(ConnectionModel conn)
+      {
+          string name = string.IsNullOrWhiteSpace(conn.SiteName)
+              ? (string.IsNullOrWhiteSpace(conn.Process) ? conn.Host : conn.Process)
+              : conn.SiteName;
+          if (name.Length > 18) name = name[..16] + "..";
 
-        long dl = conn.DownloadSpeed;
-        string speed = dl >= 1024 * 1024
-            ? $"{dl / 1048576.0:F1}MB/s"
-            : $"{dl / 1024.0:F0}KB/s";
+          long dl = conn.DownloadSpeed;
+          string speed = dl >= 1024 * 1024
+              ? $"{dl / 1048576.0:F1}MB/s"
+              : $"{dl / 1024.0:F0}KB/s";
 
-        return $"{name}  ▼{speed}";
-    }
+          return $"{name}  ▼{speed}";
+      }
 
-    // ─── Collection Change Handling ──────────────────────────────────────────────
+        private static (WpfColor Fill, WpfColor Stroke) GetLandStyleForPolygon((double lat, double lon)[] polygon)
+        {
+            var first = polygon[0];
+            if (first.lat < -60)
+                return (WpfColor.FromArgb(188, 52, 110, 168), WpfColor.FromArgb(220, 104, 200, 255)); // Antarctica
+
+            if (first.lon <= -80 && first.lat >= 15)
+                return (WpfColor.FromArgb(154, 18, 70, 132), WpfColor.FromArgb(204, 52, 168, 235)); // North America
+
+            if (first.lon <= -34 && first.lat < 20)
+                return (WpfColor.FromArgb(154, 14, 82, 144), WpfColor.FromArgb(206, 44, 186, 248)); // South America
+
+            if (first.lon < 45 && first.lat >= 35)
+                return (WpfColor.FromArgb(154, 28, 84, 136), WpfColor.FromArgb(206, 78, 188, 240)); // Europe + islands
+
+            if (first.lon < 60 && first.lat < 35)
+                return (WpfColor.FromArgb(154, 20, 96, 132), WpfColor.FromArgb(204, 56, 196, 232)); // Africa
+
+            if (first.lon >= 60 && first.lat < 0)
+                return (WpfColor.FromArgb(154, 24, 90, 148), WpfColor.FromArgb(208, 62, 198, 248)); // Oceania + SE islands
+
+            return (WpfColor.FromArgb(156, 24, 78, 140), WpfColor.FromArgb(208, 60, 182, 244)); // Asia default
+        }
+
+
+
+      private static WpfColor GetContinentLabelColor(string continentName)
+      {
+          return continentName switch
+          {
+              "North America" => WpfColor.FromArgb(224, 118, 208, 248),
+              "South America" => WpfColor.FromArgb(224, 106, 206, 252),
+              "Europe" => WpfColor.FromArgb(226, 132, 216, 255),
+              "Africa" => WpfColor.FromArgb(224, 118, 224, 246),
+              "Asia" => WpfColor.FromArgb(226, 124, 220, 255),
+              "Oceania" => WpfColor.FromArgb(224, 138, 224, 255),
+              _ => WpfColor.FromArgb(220, 156, 230, 255), // Antarctica
+          };
+      }
+
+      // ─── Collection Change Handling ──────────────────────────────────────────────
 
     private static void OnConnectionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
@@ -518,37 +558,6 @@ public class MapTrafficRadarControl : Canvas
         ("Asia", 43, 90),
         ("Oceania", -23, 137),
         ("Antarctica", -77, 0),
-    };
-
-    private static readonly (string Name, double LabelLat, double LabelLon, (double lat, double lon)[] Polygon)[] OceanBasins =
-    {
-        ("Pacific Ocean", 3, -155, new (double lat, double lon)[]
-        {
-            (58, -179), (58, -130), (42, -108), (20, -93), (2, -83), (-25, -76),
-            (-52, -74), (-58, -112), (-60, -155), (-56, -179), (58, -179)
-        }),
-        ("Atlantic Ocean", 8, -26, new (double lat, double lon)[]
-        {
-            (72, -74), (72, 14), (60, 12), (48, 2), (34, -6), (20, -12),
-            (6, -16), (-8, -20), (-24, -22), (-40, -20), (-54, -16),
-            (-58, -24), (-58, -52), (-50, -58), (-34, -60), (-16, -56),
-            (2, -50), (22, -46), (42, -46), (58, -54), (72, -74)
-        }),
-        ("Indian Ocean", -15, 78, new (double lat, double lon)[]
-        {
-            (30, 32), (30, 114), (10, 112), (-6, 109), (-16, 103), (-32, 95),
-            (-44, 76), (-44, 42), (-24, 34), (-2, 38), (20, 42), (30, 32)
-        }),
-        ("Arctic Ocean", 77, 15, new (double lat, double lon)[]
-        {
-            (84, -179), (84, 179), (72, 179), (70, 120), (72, 70), (72, 20),
-            (70, -20), (72, -70), (70, -125), (72, -170), (84, -179)
-        }),
-        ("Southern Ocean", -63, 10, new (double lat, double lon)[]
-        {
-            (-58, -179), (-58, 179), (-72, 179), (-74, 120), (-72, 40),
-            (-74, -40), (-72, -120), (-58, -179)
-        }),
     };
 
     private static readonly (double lat, double lon)[][] WorldLandPolygons =
