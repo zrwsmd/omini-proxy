@@ -976,7 +976,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         await _coreLock.WaitAsync();
         try
         {
-            if (_enableSystemProxy) _systemProxy.DisableAndRestore();
+            // Always restore system proxy regardless of current EnableSystemProxy state,
+            // because the user may have toggled it off after connecting.
+            _systemProxy.RestoreFromSnapshotIfAny();
             if (_core is not null)
             {
                 await _core.StopAsync();
