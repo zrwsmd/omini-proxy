@@ -47,7 +47,7 @@ public sealed class SingBoxConfigFactoryV2
 
         if (settings.EnableTun && hasProxy)
         {
-            root["dns"] = BuildTunDns();
+            root["dns"] = BuildTunDns(selected);
         }
 
         var experimental = new Dictionary<string, object?>();
@@ -108,7 +108,7 @@ public sealed class SingBoxConfigFactoryV2
             if (settings.EnableTun)
             {
                 route["auto_detect_interface"] = true;
-                route["default_domain_resolver"] = new { server = "dns-remote" };
+                route["default_domain_resolver"] = new { server = "dns-direct" };
 
                 // 强制劫持 DNS 流量
                 route["rules"] = new object[]
@@ -164,7 +164,7 @@ public sealed class SingBoxConfigFactoryV2
         if (settings.EnableTun)
         {
             cnRoute["auto_detect_interface"] = true;
-            cnRoute["default_domain_resolver"] = new { server = "dns-remote" };
+            cnRoute["default_domain_resolver"] = new { server = "dns-direct" };
 
             // 强制劫持 DNS 流量，防止系统 DNS 设置为 127.0.0.1 时的回环拒绝问题
             var rules = (object[])cnRoute["rules"]!;
@@ -227,8 +227,22 @@ public sealed class SingBoxConfigFactoryV2
         return rules.ToArray();
     }
 
-    private static object BuildTunDns()
+    private static object BuildTunDns(ProxyNode? proxyNode = null)
     {
+        var dnsRules = new List<object>
+        {
+            new { rule_set = "geosite-cn", server = "dns-direct" },
+            new { rule_set = "geoip-cn", server = "dns-direct" },
+        };
+
+        // 关键修复：如果代理节点的服务器地址是域名（不是 IP），
+        // 必须使用直连 DNS 解析它，否则会出现 DNS 解析死循环：
+        // 解析代理域名 → 用远程 DNS → 远程 DNS 走代理 → 代理没连上 → 💀
+        if (proxyNode != null && !System.Net.IPAddress.TryParse(proxyNode.Server, out _))
+        {
+            dnsRules.Insert(0, new { domain = new[] { proxyNode.Server }, server = "dns-direct" });
+        }
+
         return new
         {
             servers = new object[]
@@ -256,11 +270,7 @@ public sealed class SingBoxConfigFactoryV2
                     server_port = 53,
                 },
             },
-            rules = new object[]
-            {
-                new { rule_set = "geosite-cn", server = "dns-direct" },
-                new { rule_set = "geoip-cn", server = "dns-direct" },
-            },
+            rules = dnsRules.ToArray(),
             final = "dns-remote",
             strategy = "prefer_ipv4",
         };
