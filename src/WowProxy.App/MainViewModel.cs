@@ -34,6 +34,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private CoreState _coreState = CoreState.Stopped;
     private DashboardViewModel _dashboard;
     private SettingsViewModel _settingsViewModel;
+    private ChainProxyViewModel _chainProxy;
 
     private bool _enableSystemProxy;
     private string _statusText;
@@ -105,12 +106,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
+        _chainProxy = new ChainProxyViewModel(this, settings.EnableChainProxy, settings.ChainProxyNodeIds?.ToList());
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public DashboardViewModel Dashboard => _dashboard;
     public SettingsViewModel Settings => _settingsViewModel;
+    public ChainProxyViewModel ChainProxy => _chainProxy;
 
     public AsyncRelayCommand ConnectCommand { get; }
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
@@ -389,7 +392,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        if (_nodes.Count > 0 && ActiveNode is null)
+        // Chain proxy validation
+        if (_chainProxy.EnableChainProxy)
+        {
+            var chainIds = _chainProxy.GetChainNodeIds();
+            if (chainIds.Count < 2)
+            {
+                CoreState = CoreState.Faulted;
+                StatusText = "链式代理至少需要 2 个节点";
+                return;
+            }
+        }
+        else if (_nodes.Count > 0 && ActiveNode is null)
         {
             CoreState = CoreState.Faulted;
             StatusText = "请先设置活动节点";
@@ -404,7 +418,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        if (ActiveNode is not null)
+        if (_chainProxy.EnableChainProxy)
+        {
+            var chainNames = _chainProxy.ChainNodes.Select(c => c.DisplayName).ToList();
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info,
+                $"链式代理模式：本地 → {string.Join(" → ", chainNames)} → 目标网站"));
+        }
+        else if (ActiveNode is not null)
         {
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(ActiveNode.Node)));
         }
@@ -430,7 +450,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             EnableTun: EnableTun,
             TunInterfaceName: null,
             BypassTunProcesses: _settingsViewModel.BypassTunProcesses,
-            SubscriptionGroups: _subscriptionGroups.ToList()
+            SubscriptionGroups: _subscriptionGroups.ToList(),
+            EnableChainProxy: _chainProxy.EnableChainProxy,
+            ChainProxyNodeIds: _chainProxy.GetChainNodeIds()
         );
 
         await _settingsStore.SaveAsync(_settings);
@@ -986,6 +1008,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 EnableSystemProxy = EnableSystemProxy,
                 BypassTunProcesses = _settingsViewModel.BypassTunProcesses,
                 SubscriptionGroups = _subscriptionGroups.ToList(),
+                EnableChainProxy = _chainProxy.EnableChainProxy,
+                ChainProxyNodeIds = _chainProxy.GetChainNodeIds(),
             };
             await _settingsStore.SaveAsync(_settings);
         }

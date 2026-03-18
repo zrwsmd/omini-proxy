@@ -23,7 +23,9 @@ public sealed record AppSettings(
     bool EnableTun = false,
     string? TunInterfaceName = null,
     string? BypassTunProcesses = null,
-    List<SubscriptionEntry>? SubscriptionGroups = null
+    List<SubscriptionEntry>? SubscriptionGroups = null,
+    bool EnableChainProxy = false,
+    List<string>? ChainProxyNodeIds = null
 )
 {
     public static AppSettings Default =>
@@ -42,6 +44,8 @@ public sealed record AppSettings(
             EnableTun: false,
             TunInterfaceName: null,
             BypassTunProcesses: null,
-            SubscriptionGroups: null
+            SubscriptionGroups: null,
+            EnableChainProxy: false,
+            ChainProxyNodeIds: null
         );
 }

@@ -14,9 +14,13 @@ public sealed class SingBoxConfigFactoryV2
 
     public string Build(AppSettings settings)
     {
-        var selected = ResolveSelectedNode(settings);
+        var chainNodes = ResolveChainNodes(settings);
+        var selected = chainNodes.Count > 0 ? chainNodes.Last() : ResolveSelectedNode(settings);
         var hasProxy = selected is not null;
         var logLevel = NormalizeLogLevel(settings.LogLevel);
+
+        // For TUN route exclusion, use the first hop (the one we connect to directly)
+        var firstHopNode = chainNodes.Count > 0 ? chainNodes.First() : selected;
 
         var root = new Dictionary<string, object?>
         {
@@ -25,7 +29,7 @@ public sealed class SingBoxConfigFactoryV2
                 level = logLevel,
                 timestamp = true,
             },
-            ["inbounds"] = BuildInbounds(settings, selected),
+            ["inbounds"] = BuildInbounds(settings, firstHopNode),
         };
 
         var outbounds = new List<object>
@@ -37,7 +41,12 @@ public sealed class SingBoxConfigFactoryV2
             },
         };
 
-        if (selected is not null)
+        if (chainNodes.Count >= 2)
+        {
+            // Chain proxy mode: build linked outbounds via detour
+            outbounds.InsertRange(0, BuildChainOutbounds(chainNodes));
+        }
+        else if (selected is not null)
         {
             outbounds.Insert(0, BuildProxyOutbound(selected));
         }
@@ -47,7 +56,7 @@ public sealed class SingBoxConfigFactoryV2
 
         if (settings.EnableTun && hasProxy)
         {
-            root["dns"] = BuildTunDns(selected);
+            root["dns"] = BuildTunDns(firstHopNode, chainNodes);
         }
 
         var experimental = new Dictionary<string, object?>();
@@ -227,7 +236,7 @@ public sealed class SingBoxConfigFactoryV2
         return rules.ToArray();
     }
 
-    private static object BuildTunDns(ProxyNode? proxyNode = null)
+    private static object BuildTunDns(ProxyNode? proxyNode = null, List<ProxyNode>? chainNodes = null)
     {
         var dnsRules = new List<object>
         {
@@ -238,9 +247,25 @@ public sealed class SingBoxConfigFactoryV2
         // 关键修复：如果代理节点的服务器地址是域名（不是 IP），
         // 必须使用直连 DNS 解析它，否则会出现 DNS 解析死循环：
         // 解析代理域名 → 用远程 DNS → 远程 DNS 走代理 → 代理没连上 → 💀
-        if (proxyNode != null && !System.Net.IPAddress.TryParse(proxyNode.Server, out _))
+        // 链式代理时，所有链中节点的域名都必须走直连 DNS
+        var directDnsDomains = new List<string>();
+
+        if (chainNodes is { Count: >= 2 })
         {
-            dnsRules.Insert(0, new { domain = new[] { proxyNode.Server }, server = "dns-direct" });
+            foreach (var node in chainNodes)
+            {
+                if (!string.IsNullOrWhiteSpace(node.Server) && !System.Net.IPAddress.TryParse(node.Server, out _))
+                    directDnsDomains.Add(node.Server);
+            }
+        }
+        else if (proxyNode != null && !System.Net.IPAddress.TryParse(proxyNode.Server, out _))
+        {
+            directDnsDomains.Add(proxyNode.Server);
+        }
+
+        if (directDnsDomains.Count > 0)
+        {
+            dnsRules.Insert(0, new { domain = directDnsDomains.Distinct().ToArray(), server = "dns-direct" });
         }
 
         return new
@@ -313,14 +338,70 @@ public sealed class SingBoxConfigFactoryV2
         return nodes.FirstOrDefault();
     }
 
-    private static object BuildProxyOutbound(ProxyNode node)
+    /// <summary>
+    /// Resolve the chain proxy node list from settings.
+    /// Returns an ordered list of ProxyNode for the chain, or empty if chain proxy is disabled/invalid.
+    /// </summary>
+    private static List<ProxyNode> ResolveChainNodes(AppSettings settings)
+    {
+        if (!settings.EnableChainProxy
+            || settings.ChainProxyNodeIds is null
+            || settings.ChainProxyNodeIds.Count < 2
+            || settings.Nodes is null)
+        {
+            return new List<ProxyNode>();
+        }
+
+        var nodeMap = settings.Nodes.ToDictionary(n => n.Id, n => n, StringComparer.OrdinalIgnoreCase);
+        var result = new List<ProxyNode>();
+
+        foreach (var id in settings.ChainProxyNodeIds)
+        {
+            if (nodeMap.TryGetValue(id, out var node))
+                result.Add(node);
+        }
+
+        // Need at least 2 valid nodes for a chain
+        return result.Count >= 2 ? result : new List<ProxyNode>();
+    }
+
+    /// <summary>
+    /// Build a chain of outbounds linked via detour.
+    /// Chain order: [0]=first hop (direct internet), [1]=second hop, ... [N-1]=exit node.
+    /// The exit node gets tag "proxy". Each previous node gets "chain-hop-0", "chain-hop-1", etc.
+    /// Traffic flow: local → chain-hop-0 → chain-hop-1 → ... → proxy → target
+    /// </summary>
+    private static List<object> BuildChainOutbounds(List<ProxyNode> chainNodes)
+    {
+        var result = new List<object>();
+
+        for (int i = chainNodes.Count - 1; i >= 0; i--)
+        {
+            var node = chainNodes[i];
+            bool isExitNode = (i == chainNodes.Count - 1);
+            bool isFirstHop = (i == 0);
+            string tag = isExitNode ? "proxy" : $"chain-hop-{i}";
+            string? detour = isFirstHop ? null : (i == 1 ? "chain-hop-0" : $"chain-hop-{i - 1}");
+
+            result.Add(BuildProxyOutbound(node, tag, detour));
+        }
+
+        return result;
+    }
+
+    private static object BuildProxyOutbound(ProxyNode node, string tag = "proxy", string? detour = null)
     {
         var baseOutbound = new Dictionary<string, object?>
         {
-            ["tag"] = "proxy",
+            ["tag"] = tag,
             ["server"] = node.Server,
             ["server_port"] = node.Port,
         };
+
+        if (!string.IsNullOrWhiteSpace(detour))
+        {
+            baseOutbound["detour"] = detour;
+        }
 
         switch (node.Type)
         {
