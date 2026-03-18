@@ -11,8 +11,10 @@ using System.Text;
 namespace WowProxy.Infrastructure.Mitm;
 
 /// <summary>
-/// A lightweight MITM HTTP/HTTPS proxy that intercepts traffic, captures plaintext
+/// A MITM HTTP/HTTPS proxy that intercepts ALL traffic, captures plaintext
 /// request/response data, and forwards to an upstream proxy or directly to the target.
+/// Works standalone — no upstream proxy required.
+/// Filtering is done post-capture in the UI (like Wireshark display filters).
 /// </summary>
 public sealed class MitmProxyServer : IAsyncDisposable
 {
@@ -22,16 +24,13 @@ public sealed class MitmProxyServer : IAsyncDisposable
     private Task? _acceptLoop;
     private int _port;
 
-    // Upstream proxy (e.g., sing-box mixed-in)
+    // Upstream proxy (optional — e.g., sing-box mixed-in)
     private string? _upstreamProxyHost;
     private int _upstreamProxyPort;
 
-    // Filter: only intercept these domains (empty = intercept all)
-    private readonly ConcurrentDictionary<string, bool> _interceptDomains = new(StringComparer.OrdinalIgnoreCase);
-
     // Captured messages
     private readonly ConcurrentQueue<CapturedHttpMessage> _captured = new();
-    private const int MaxCaptured = 500;
+    private const int MaxCaptured = 2000;
 
     public event Action<CapturedHttpMessage>? OnMessageCaptured;
     public event Action<string>? OnLog;
@@ -53,15 +52,13 @@ public sealed class MitmProxyServer : IAsyncDisposable
         _upstreamProxyPort = port;
     }
 
-    public void SetInterceptDomains(IEnumerable<string> domains)
+    public void ClearUpstreamProxy()
     {
-        _interceptDomains.Clear();
-        foreach (var d in domains)
-        {
-            if (!string.IsNullOrWhiteSpace(d))
-                _interceptDomains[d.Trim()] = true;
-        }
+        _upstreamProxyHost = null;
+        _upstreamProxyPort = 0;
     }
+
+    public bool HasUpstreamProxy => !string.IsNullOrEmpty(_upstreamProxyHost) && _upstreamProxyPort > 0;
 
     public void ClearCaptured() => _captured.Clear();
 
@@ -74,7 +71,8 @@ public sealed class MitmProxyServer : IAsyncDisposable
         _listener = new TcpListener(IPAddress.Loopback, port);
         _listener.Start();
 
-        Log($"MITM proxy started on 127.0.0.1:{port}");
+        Log($"MITM 抓包已启动 127.0.0.1:{port}（拦截全部 HTTPS 流量）" +
+            (HasUpstreamProxy ? $"  上游代理: {_upstreamProxyHost}:{_upstreamProxyPort}" : "  直连模式"));
         _acceptLoop = AcceptLoopAsync(_cts.Token);
     }
 
@@ -100,7 +98,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
 
         _cts?.Dispose();
         _cts = null;
-        Log("MITM proxy stopped");
+        Log("MITM 抓包已停止");
     }
 
     private async Task AcceptLoopAsync(CancellationToken ct)
@@ -146,7 +144,6 @@ public sealed class MitmProxyServer : IAsyncDisposable
             }
             else
             {
-                // Plain HTTP — read remaining headers, capture and forward
                 await HandlePlainHttpAsync(stream, method, target, firstLine, ct);
             }
         }
@@ -172,16 +169,19 @@ public sealed class MitmProxyServer : IAsyncDisposable
         var host = colonIdx > 0 ? target[..colonIdx] : target;
         var port = colonIdx > 0 && int.TryParse(target[(colonIdx + 1)..], out var p) ? p : 443;
 
-        // Check if we should intercept this domain
-        bool shouldIntercept = ShouldIntercept(host);
-
-        if (!shouldIntercept)
+        // Resolve IP for the RemoteAddress field
+        var remoteAddr = host;
+        try
         {
-            // Tunnel directly without interception
-            await TunnelDirectAsync(clientStream, host, port, ct);
-            return;
+            if (!IPAddress.TryParse(host, out _))
+            {
+                var addrs = await Dns.GetHostAddressesAsync(host, ct);
+                if (addrs.Length > 0) remoteAddr = addrs[0].ToString();
+            }
         }
+        catch { /* keep hostname */ }
 
+        // Always intercept — capture ALL traffic
         // Send 200 Connection Established
         var response = "HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray();
         await clientStream.WriteAsync(response, ct);
@@ -190,7 +190,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
         // Get/create domain certificate
         var cert = _ca.GetOrCreateDomainCert(host);
 
-        // TLS handshake with client
+        // TLS handshake with client (we act as the server)
         var sslClientStream = new SslStream(clientStream, leaveInnerStreamOpen: true);
         try
         {
@@ -202,48 +202,58 @@ public sealed class MitmProxyServer : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Log($"TLS handshake failed for {host}: {ex.Message}");
+            Log($"TLS 握手失败 {host}: {ex.Message}");
             sslClientStream.Dispose();
             return;
         }
 
-        // Now read plaintext HTTP from the TLS stream
-        await HandleDecryptedStreamAsync(sslClientStream, host, port, ct);
+        // Now read plaintext HTTP from the decrypted TLS stream
+        await HandleDecryptedStreamAsync(sslClientStream, host, port, remoteAddr, ct);
         sslClientStream.Dispose();
     }
 
-    private async Task HandleDecryptedStreamAsync(SslStream clientSsl, string host, int port, CancellationToken ct)
+    private async Task HandleDecryptedStreamAsync(SslStream clientSsl, string host, int port, string remoteAddr, CancellationToken ct)
     {
         try
         {
             // Read the HTTP request from the decrypted stream
-            var (method, path, httpVersion, headers, body) = await ReadHttpRequestAsync(clientSsl, ct);
+            var (method, path, httpVersion, headers, bodyBytes) = await ReadHttpRequestAsync(clientSsl, ct);
             if (method == null) return;
 
             var url = $"https://{host}{path}";
+            var reqContentType = headers.TryGetValue("Content-Type", out var rct) ? rct : "";
+            var bodyStr = Encoding.UTF8.GetString(bodyBytes);
+
             var captured = new CapturedHttpMessage
             {
                 Method = method,
                 Url = url,
+                Path = path ?? "/",
                 Host = host,
+                Protocol = "HTTPS",
+                RemoteAddress = remoteAddr,
+                RemotePort = port,
                 RequestHeaders = headers,
-                RequestBody = body,
+                RequestBody = bodyStr,
+                RequestContentType = reqContentType,
+                RequestSize = bodyBytes.Length,
                 Timestamp = DateTimeOffset.Now,
             };
 
             var sw = Stopwatch.StartNew();
 
             // Connect to the actual server (through upstream proxy or direct)
-            Stream serverStream;
             TcpClient? serverTcp = null;
             SslStream? serverSsl = null;
 
             try
             {
-                if (!string.IsNullOrEmpty(_upstreamProxyHost))
+                Stream serverStream;
+
+                if (HasUpstreamProxy)
                 {
                     serverTcp = new TcpClient();
-                    await serverTcp.ConnectAsync(_upstreamProxyHost, _upstreamProxyPort, ct);
+                    await serverTcp.ConnectAsync(_upstreamProxyHost!, _upstreamProxyPort, ct);
                     serverTcp.NoDelay = true;
                     var ns = serverTcp.GetStream();
 
@@ -251,7 +261,6 @@ public sealed class MitmProxyServer : IAsyncDisposable
                     var connectReq = $"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n";
                     await ns.WriteAsync(Encoding.ASCII.GetBytes(connectReq), ct);
                     var connectResp = await ReadLineAsync(ns, ct);
-                    // Read remaining headers
                     while (true)
                     {
                         var l = await ReadLineAsync(ns, ct);
@@ -260,14 +269,13 @@ public sealed class MitmProxyServer : IAsyncDisposable
 
                     if (connectResp == null || !connectResp.Contains("200"))
                     {
-                        captured.Error = $"Upstream proxy rejected CONNECT: {connectResp}";
+                        captured.Error = $"上游代理拒绝 CONNECT: {connectResp}";
                         captured.IsCompleted = true;
                         AddCaptured(captured);
                         serverTcp.Dispose();
                         return;
                     }
 
-                    // TLS to actual server over the proxy tunnel
                     serverSsl = new SslStream(ns, leaveInnerStreamOpen: true);
                     await serverSsl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
                     {
@@ -277,6 +285,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 }
                 else
                 {
+                    // Direct connect
                     serverTcp = new TcpClient();
                     await serverTcp.ConnectAsync(host, port, ct);
                     serverTcp.NoDelay = true;
@@ -288,24 +297,28 @@ public sealed class MitmProxyServer : IAsyncDisposable
                     serverStream = serverSsl;
                 }
 
-                // Forward the request to the server
-                var reqBytes = BuildHttpRequest(method, path, httpVersion, headers, body);
+                // Forward the original request bytes to the server
+                var reqBytes = BuildHttpRequest(method, path ?? "/", httpVersion ?? "HTTP/1.1", headers, bodyBytes);
                 await serverStream.WriteAsync(reqBytes, ct);
                 await serverStream.FlushAsync(ct);
 
                 // Read the response
-                var (statusCode, respHeaders, respBody) = await ReadHttpResponseAsync(serverStream, ct);
+                var (statusCode, respHeaders, respBodyBytes) = await ReadHttpResponseAsync(serverStream, ct);
                 sw.Stop();
+
+                var respContentType = respHeaders.TryGetValue("Content-Type", out var respCt) ? respCt : "";
 
                 captured.StatusCode = statusCode;
                 captured.ResponseHeaders = respHeaders;
-                captured.ResponseBody = respBody;
+                captured.ResponseBody = Encoding.UTF8.GetString(respBodyBytes);
+                captured.ResponseContentType = respContentType;
+                captured.ResponseSize = respBodyBytes.Length;
                 captured.DurationMs = sw.ElapsedMilliseconds;
                 captured.IsCompleted = true;
                 AddCaptured(captured);
 
                 // Forward response back to client
-                var respBytes = BuildHttpResponse(statusCode, respHeaders, respBody);
+                var respBytes = BuildHttpResponse(statusCode, respHeaders, respBodyBytes);
                 await clientSsl.WriteAsync(respBytes, ct);
                 await clientSsl.FlushAsync(ct);
             }
@@ -325,22 +338,17 @@ public sealed class MitmProxyServer : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            Log($"Decrypted stream error for {host}: {ex.Message}");
+            Log($"解密流错误 {host}: {ex.Message}");
         }
     }
 
     private async Task HandlePlainHttpAsync(NetworkStream stream, string method, string url,
         string firstLine, CancellationToken ct)
     {
-        // Parse host from URL
         Uri.TryCreate(url, UriKind.Absolute, out var uri);
         var host = uri?.Host ?? "";
-
-        if (!ShouldIntercept(host))
-        {
-            // Just tunnel
-            return;
-        }
+        var path = uri?.PathAndQuery ?? url;
+        var port = uri?.Port ?? 80;
 
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         while (true)
@@ -352,104 +360,84 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 headers[line[..sep].Trim()] = line[(sep + 1)..].Trim();
         }
 
-        var body = "";
-        if (headers.TryGetValue("Content-Length", out var clStr) && int.TryParse(clStr, out var cl) && cl > 0)
-        {
-            var buf = new byte[cl];
-            var read = 0;
-            while (read < cl)
-            {
-                var n = await stream.ReadAsync(buf.AsMemory(read, cl - read), ct);
-                if (n == 0) break;
-                read += n;
-            }
-            body = Encoding.UTF8.GetString(buf, 0, read);
-        }
+        var bodyBytes = await ReadBodyBytesFromHeaders(stream, headers, ct);
+        var reqContentType = headers.TryGetValue("Content-Type", out var rct) ? rct : "";
 
         var captured = new CapturedHttpMessage
         {
             Method = method,
             Url = url,
+            Path = path,
             Host = host,
+            Protocol = "HTTP",
+            RemoteAddress = host,
+            RemotePort = port,
             RequestHeaders = headers,
-            RequestBody = body,
+            RequestBody = Encoding.UTF8.GetString(bodyBytes),
+            RequestContentType = reqContentType,
+            RequestSize = bodyBytes.Length,
         };
-        AddCaptured(captured);
-    }
 
-    private async Task TunnelDirectAsync(NetworkStream clientStream, string host, int port, CancellationToken ct)
-    {
-        // Send 200 to client
-        var ok = "HTTP/1.1 200 Connection Established\r\n\r\n"u8.ToArray();
-        await clientStream.WriteAsync(ok, ct);
-
-        // Connect upstream
+        // Forward to upstream or direct
+        var sw = Stopwatch.StartNew();
         TcpClient? remote = null;
         try
         {
-            if (!string.IsNullOrEmpty(_upstreamProxyHost))
+            if (HasUpstreamProxy)
             {
                 remote = new TcpClient();
-                await remote.ConnectAsync(_upstreamProxyHost, _upstreamProxyPort, ct);
-                var ns = remote.GetStream();
-                var connectReq = $"CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n";
-                await ns.WriteAsync(Encoding.ASCII.GetBytes(connectReq), ct);
-                // Read response
-                while (true)
-                {
-                    var l = await ReadLineAsync(ns, ct);
-                    if (string.IsNullOrEmpty(l)) break;
-                }
-                await RelayAsync(clientStream, ns, ct);
+                await remote.ConnectAsync(_upstreamProxyHost!, _upstreamProxyPort, ct);
             }
             else
             {
                 remote = new TcpClient();
                 await remote.ConnectAsync(host, port, ct);
-                await RelayAsync(clientStream, remote.GetStream(), ct);
             }
+            remote.NoDelay = true;
+            var ns = remote.GetStream();
+
+            // Rebuild and send request
+            var target = HasUpstreamProxy ? url : path;
+            var reqLine = $"{method} {target} HTTP/1.1\r\n";
+            await ns.WriteAsync(Encoding.ASCII.GetBytes(reqLine), ct);
+            foreach (var (k, v) in headers)
+                await ns.WriteAsync(Encoding.ASCII.GetBytes($"{k}: {v}\r\n"), ct);
+            await ns.WriteAsync("\r\n"u8.ToArray(), ct);
+            if (bodyBytes.Length > 0)
+                await ns.WriteAsync(bodyBytes, ct);
+            await ns.FlushAsync(ct);
+
+            // Read response
+            var (statusCode, respHeaders, respBodyBytes) = await ReadHttpResponseAsync(ns, ct);
+            sw.Stop();
+
+            var respContentType = respHeaders.TryGetValue("Content-Type", out var respCt) ? respCt : "";
+            captured.StatusCode = statusCode;
+            captured.ResponseHeaders = respHeaders;
+            captured.ResponseBody = Encoding.UTF8.GetString(respBodyBytes);
+            captured.ResponseContentType = respContentType;
+            captured.ResponseSize = respBodyBytes.Length;
+            captured.DurationMs = sw.ElapsedMilliseconds;
+            captured.IsCompleted = true;
+            AddCaptured(captured);
+
+            // Forward back to client
+            var respBytes = BuildHttpResponse(statusCode, respHeaders, respBodyBytes);
+            await stream.WriteAsync(respBytes, ct);
+            await stream.FlushAsync(ct);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            captured.Error = ex.Message;
+            captured.DurationMs = sw.ElapsedMilliseconds;
+            captured.IsCompleted = true;
+            AddCaptured(captured);
+        }
         finally
         {
             remote?.Dispose();
         }
-    }
-
-    private static async Task RelayAsync(Stream a, Stream b, CancellationToken ct)
-    {
-        var t1 = CopyAsync(a, b, ct);
-        var t2 = CopyAsync(b, a, ct);
-        await Task.WhenAny(t1, t2);
-
-        static async Task CopyAsync(Stream from, Stream to, CancellationToken ct2)
-        {
-            var buf = ArrayPool<byte>.Shared.Rent(8192);
-            try
-            {
-                while (!ct2.IsCancellationRequested)
-                {
-                    var n = await from.ReadAsync(buf, ct2);
-                    if (n == 0) break;
-                    await to.WriteAsync(buf.AsMemory(0, n), ct2);
-                    await to.FlushAsync(ct2);
-                }
-            }
-            catch { }
-            finally { ArrayPool<byte>.Shared.Return(buf); }
-        }
-    }
-
-    private bool ShouldIntercept(string host)
-    {
-        if (_interceptDomains.IsEmpty) return true;
-
-        foreach (var domain in _interceptDomains.Keys)
-        {
-            if (host.Equals(domain, StringComparison.OrdinalIgnoreCase)) return true;
-            if (host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase)) return true;
-        }
-        return false;
     }
 
     private void AddCaptured(CapturedHttpMessage msg)
@@ -483,10 +471,10 @@ public sealed class MitmProxyServer : IAsyncDisposable
     }
 
     private static async Task<(string? method, string? path, string? httpVersion,
-        Dictionary<string, string> headers, string body)> ReadHttpRequestAsync(Stream stream, CancellationToken ct)
+        Dictionary<string, string> headers, byte[] body)> ReadHttpRequestAsync(Stream stream, CancellationToken ct)
     {
         var firstLine = await ReadLineAsync(stream, ct);
-        if (firstLine == null) return (null, null, null, new(), "");
+        if (firstLine == null) return (null, null, null, new(), Array.Empty<byte>());
 
         var parts = firstLine.Split(' ', 3);
         var method = parts.Length > 0 ? parts[0] : "";
@@ -503,11 +491,11 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 headers[line[..sep].Trim()] = line[(sep + 1)..].Trim();
         }
 
-        var body = await ReadBodyAsync(stream, headers, ct);
+        var body = await ReadBodyBytesFromHeaders(stream, headers, ct);
         return (method, path, httpVersion, headers, body);
     }
 
-    private static async Task<(int statusCode, Dictionary<string, string> headers, string body)>
+    private static async Task<(int statusCode, Dictionary<string, string> headers, byte[] body)>
         ReadHttpResponseAsync(Stream stream, CancellationToken ct)
     {
         var statusLine = await ReadLineAsync(stream, ct);
@@ -528,22 +516,29 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 headers[line[..sep].Trim()] = line[(sep + 1)..].Trim();
         }
 
-        var body = await ReadBodyAsync(stream, headers, ct);
+        var body = await ReadBodyBytesFromHeaders(stream, headers, ct);
+
+        // Decompress if needed
+        if (headers.TryGetValue("Content-Encoding", out var ce) && body.Length > 0)
+        {
+            try { body = DecompressBody(body, ce); }
+            catch { }
+        }
+
         return (statusCode, headers, body);
     }
 
-    private static async Task<string> ReadBodyAsync(Stream stream, Dictionary<string, string> headers, CancellationToken ct)
+    private static async Task<byte[]> ReadBodyBytesFromHeaders(Stream stream, Dictionary<string, string> headers, CancellationToken ct)
     {
-        byte[] rawBody;
-
         if (headers.TryGetValue("Transfer-Encoding", out var te) &&
             te.Contains("chunked", StringComparison.OrdinalIgnoreCase))
         {
-            rawBody = await ReadChunkedBodyAsync(stream, ct);
+            return await ReadChunkedBodyAsync(stream, ct);
         }
-        else if (headers.TryGetValue("Content-Length", out var clStr) && int.TryParse(clStr, out var cl) && cl > 0)
+
+        if (headers.TryGetValue("Content-Length", out var clStr) && int.TryParse(clStr, out var cl) && cl > 0)
         {
-            var buf = new byte[Math.Min(cl, 2 * 1024 * 1024)]; // cap at 2MB
+            var buf = new byte[Math.Min(cl, 4 * 1024 * 1024)]; // cap at 4MB
             var read = 0;
             while (read < buf.Length)
             {
@@ -551,24 +546,10 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 if (n == 0) break;
                 read += n;
             }
-            rawBody = buf[..read];
-        }
-        else
-        {
-            return "";
+            return buf[..read];
         }
 
-        // Handle gzip/br/deflate
-        if (headers.TryGetValue("Content-Encoding", out var ce))
-        {
-            try
-            {
-                rawBody = DecompressBody(rawBody, ce);
-            }
-            catch { /* return raw bytes as string */ }
-        }
-
-        return Encoding.UTF8.GetString(rawBody);
+        return Array.Empty<byte>();
     }
 
     private static async Task<byte[]> ReadChunkedBodyAsync(Stream stream, CancellationToken ct)
@@ -578,10 +559,14 @@ public sealed class MitmProxyServer : IAsyncDisposable
         {
             var sizeLine = await ReadLineAsync(stream, ct);
             if (sizeLine == null) break;
-            var chunkSize = Convert.ToInt32(sizeLine.Trim(), 16);
+
+            int chunkSize;
+            try { chunkSize = Convert.ToInt32(sizeLine.Trim(), 16); }
+            catch { break; }
+
             if (chunkSize == 0)
             {
-                await ReadLineAsync(stream, ct); // trailing CRLF
+                await ReadLineAsync(stream, ct);
                 break;
             }
 
@@ -594,7 +579,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 read += n;
             }
             ms.Write(buf, 0, read);
-            await ReadLineAsync(stream, ct); // trailing CRLF after chunk
+            await ReadLineAsync(stream, ct);
         }
         return ms.ToArray();
     }
@@ -619,7 +604,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
     }
 
     private static byte[] BuildHttpRequest(string method, string path, string httpVersion,
-        Dictionary<string, string> headers, string body)
+        Dictionary<string, string> headers, byte[] body)
     {
         var sb = new StringBuilder();
         sb.Append(method).Append(' ').Append(path).Append(' ').Append(httpVersion).Append("\r\n");
@@ -628,22 +613,19 @@ public sealed class MitmProxyServer : IAsyncDisposable
         sb.Append("\r\n");
 
         var headerBytes = Encoding.UTF8.GetBytes(sb.ToString());
-        if (string.IsNullOrEmpty(body)) return headerBytes;
+        if (body.Length == 0) return headerBytes;
 
-        var bodyBytes = Encoding.UTF8.GetBytes(body);
-        var result = new byte[headerBytes.Length + bodyBytes.Length];
+        var result = new byte[headerBytes.Length + body.Length];
         Buffer.BlockCopy(headerBytes, 0, result, 0, headerBytes.Length);
-        Buffer.BlockCopy(bodyBytes, 0, result, headerBytes.Length, bodyBytes.Length);
+        Buffer.BlockCopy(body, 0, result, headerBytes.Length, body.Length);
         return result;
     }
 
-    private static byte[] BuildHttpResponse(int statusCode, Dictionary<string, string> headers, string body)
+    private static byte[] BuildHttpResponse(int statusCode, Dictionary<string, string> headers, byte[] body)
     {
-        var bodyBytes = Encoding.UTF8.GetBytes(body);
         var sb = new StringBuilder();
         sb.Append("HTTP/1.1 ").Append(statusCode).Append(" OK\r\n");
 
-        // Rewrite content-length and remove transfer-encoding/content-encoding since we decoded
         var skipHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             { "Transfer-Encoding", "Content-Encoding", "Content-Length" };
 
@@ -652,13 +634,13 @@ public sealed class MitmProxyServer : IAsyncDisposable
             if (!skipHeaders.Contains(k))
                 sb.Append(k).Append(": ").Append(v).Append("\r\n");
         }
-        sb.Append("Content-Length: ").Append(bodyBytes.Length).Append("\r\n");
+        sb.Append("Content-Length: ").Append(body.Length).Append("\r\n");
         sb.Append("\r\n");
 
         var headerBytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var result = new byte[headerBytes.Length + bodyBytes.Length];
+        var result = new byte[headerBytes.Length + body.Length];
         Buffer.BlockCopy(headerBytes, 0, result, 0, headerBytes.Length);
-        Buffer.BlockCopy(bodyBytes, 0, result, headerBytes.Length, bodyBytes.Length);
+        Buffer.BlockCopy(body, 0, result, headerBytes.Length, body.Length);
         return result;
     }
 
