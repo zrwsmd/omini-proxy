@@ -101,6 +101,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ClearNodesCommand = new RelayCommand(_ => ClearNodes());
         TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
         TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
+        CopyNodeLinkCommand = new RelayCommand(_ => CopyNodeLink());
 
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
@@ -120,6 +121,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public RelayCommand ClearNodesCommand { get; }
     public AsyncRelayCommand TestLatencyCommand { get; }
     public AsyncRelayCommand TestSpeedCommand { get; }
+    public RelayCommand CopyNodeLinkCommand { get; }
 
     public string? SingBoxPath => _settingsViewModel.SingBoxPath;
     public bool EnableClashApi => _settingsViewModel.EnableClashApi;
@@ -831,6 +833,66 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             StatusText = $"正在切换节点：{ActiveNode.Name}，重启内核中...";
             await StopAsync();
             await StartAsync();
+        }
+    }
+    private void CopyNodeLink()
+    {
+        if (SelectedNode is null)
+        {
+            StatusText = "请先选择要复制的节点";
+            return;
+        }
+
+        var node = SelectedNode.Node;
+        string shareLink;
+
+        if (node.Type == ProxyNodeType.Vmess)
+        {
+            // 构造标准 vmess:// 分享链接 (v2rayN 格式)
+            var vmessObj = new Dictionary<string, object?>
+            {
+                ["v"] = "2",
+                ["ps"] = node.Name,
+                ["add"] = node.Server,
+                ["port"] = node.Port.ToString(),
+                ["id"] = node.Uuid ?? "",
+                ["aid"] = (node.AlterId ?? 0).ToString(),
+                ["scy"] = node.Security ?? "auto",
+                ["net"] = node.TransportType ?? "tcp",
+                ["type"] = "none",
+                ["host"] = node.TransportHost ?? "",
+                ["path"] = node.TransportPath ?? "",
+                ["tls"] = node.TlsEnabled ? "tls" : "",
+                ["sni"] = node.TlsServerName ?? "",
+                ["alpn"] = node.TlsAlpn ?? "",
+                ["fp"] = node.UtlsFingerprint ?? "",
+            };
+            var json = JsonSerializer.Serialize(vmessObj, new JsonSerializerOptions { WriteIndented = true });
+            var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+            shareLink = $"vmess://{base64}";
+        }
+        else if (!string.IsNullOrWhiteSpace(node.Raw) && 
+                 (node.Raw.StartsWith("vless://", StringComparison.OrdinalIgnoreCase) ||
+                  node.Raw.StartsWith("trojan://", StringComparison.OrdinalIgnoreCase) ||
+                  node.Raw.StartsWith("ss://", StringComparison.OrdinalIgnoreCase)))
+        {
+            // vless/trojan/ss 直接使用原始链接
+            shareLink = node.Raw;
+        }
+        else
+        {
+            StatusText = "该节点类型暂不支持导出分享链接";
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(shareLink);
+            StatusText = $"已复制 {node.Name} 的分享链接到剪贴板";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"复制失败: {ex.Message}";
         }
     }
 
