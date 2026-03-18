@@ -64,6 +64,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
 
@@ -140,8 +141,60 @@
                                 </ListBox.ItemContainerStyle>
                             </ListBox>
 
+                            <!-- 高级设置：链式代理 (可展开面板) -->
+                            <Expander Grid.Row="3" Header="🚀 高级：链式代理配置" Margin="0,0,0,8" 
+                                      Background="#F9F9F9" BorderBrush="#DDD" BorderThickness="1">
+                                <Grid DataContext="{Binding ChainProxy}" Margin="12,8">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="150" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- 开关与预览 -->
+                                    <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                                        <CheckBox Content="启用链式代理 (将所有流量通过多节点接力转发)" IsChecked="{Binding EnableChainProxy}" FontWeight="Bold" Margin="0,0,0,4"/>
+                                        <TextBlock Text="{Binding ChainFlowText}" FontSize="12" TextWrapping="Wrap" Foreground="#2060A0" 
+                                                   Background="#F0F7FF" Padding="8,4" />
+                                    </StackPanel>
+
+                                    <!-- 添加工具栏 -->
+                                    <Grid Grid.Row="1" Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ComboBox ItemsSource="{Binding AvailableNodes}" SelectedItem="{Binding SelectedAvailableNode}" DisplayMemberPath="Name" Margin="0,0,6,0" />
+                                        <Button Grid.Column="1" Content="+ 添加" Padding="12,2" Command="{Binding AddToChainCommand}" />
+                                    </Grid>
+
+                                    <!-- 链路列表及操作 -->
+                                    <Grid Grid.Row="2">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <DataGrid Grid.Column="0" ItemsSource="{Binding ChainNodes}" SelectedItem="{Binding SelectedChainNode, Mode=TwoWay}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal" BorderThickness="1" BorderBrush="#CCC">
+                                            <DataGrid.Columns>
+                                                <DataGridTextColumn Header="#" Binding="{Binding HopLabel}" Width="40"/>
+                                                <DataGridTextColumn Header="角色" Binding="{Binding RoleName}" Width="120"/>
+                                                <DataGridTextColumn Header="节点名称" Binding="{Binding DisplayName}" Width="*"/>
+                                                <DataGridTextColumn Header="节点信息" Binding="{Binding NodeInfo}" Width="200"/>
+                                            </DataGrid.Columns>
+                                        </DataGrid>
+                                        <StackPanel Grid.Column="1" Margin="6,0,0,0">
+                                            <Button Content="↑" Width="24" Height="24" Margin="0,0,0,4" Command="{Binding MoveUpCommand}" ToolTip="上移" />
+                                            <Button Content="↓" Width="24" Height="24" Margin="0,0,0,4" Command="{Binding MoveDownCommand}" ToolTip="下移" />
+                                            <Button Content="╳" Width="24" Height="24" Margin="0,0,0,4" Command="{Binding RemoveFromChainCommand}" ToolTip="移除" Foreground="DarkRed" />
+                                            <Button Content="清" Width="24" Height="24" Command="{Binding ClearChainCommand}" ToolTip="清空列表" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </Expander>
+
                             <!-- 节点表格 -->
-                          <DataGrid Grid.Row="3"
+                          <DataGrid Grid.Row="4"
                                     x:Name="NodeDataGrid"
                                     ItemsSource="{Binding FilteredNodes}"
                                 SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
@@ -247,90 +300,6 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="链式代理">
-                <Grid DataContext="{Binding ChainProxy}" Margin="16">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-
-                    <!-- 顶部：开关 + 说明 -->
-                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                        <CheckBox Content="启用链式代理" IsChecked="{Binding EnableChainProxy}" FontSize="14" FontWeight="Bold" />
-                        <TextBlock Text="链式代理让流量依次经过多个节点转发，目标网站只能看到最后一个节点(出口)的 IP 地址。" 
-                                   Foreground="#666" FontSize="12" Margin="0,6,0,0" TextWrapping="Wrap" />
-                        <TextBlock Text="例：本地 → 机房节点(入口) → 住宅IP(出口) → 目标网站，暴露的是住宅 IP。" 
-                                   Foreground="#888" FontSize="11" Margin="0,2,0,0" TextWrapping="Wrap" />
-                    </StackPanel>
-
-                    <!-- 链路流向预览 -->
-                    <Border Grid.Row="1" Background="#F0F7FF" BorderBrush="#B0D0F0" BorderThickness="1" CornerRadius="6" Padding="12,8" Margin="0,0,0,12">
-                        <TextBlock Text="{Binding ChainFlowText}" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="#2060A0" />
-                    </Border>
-
-                    <!-- 添加节点到链 -->
-                    <Grid Grid.Row="2" Margin="0,0,0,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="选择节点：" VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <ComboBox Grid.Column="1" 
-                                  ItemsSource="{Binding AvailableNodes}" 
-                                  SelectedItem="{Binding SelectedAvailableNode}" 
-                                  DisplayMemberPath="Name" />
-                        <Button Grid.Column="2" Content="添加到链" Margin="8,0,0,0" Padding="16,4" Command="{Binding AddToChainCommand}" />
-                    </Grid>
-
-                    <!-- 链节点列表 + 操作按钮 -->
-                    <Grid Grid.Row="3">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <DataGrid Grid.Column="0"
-                                  ItemsSource="{Binding ChainNodes}"
-                                  SelectedItem="{Binding SelectedChainNode, Mode=TwoWay}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  SelectionMode="Single"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="Horizontal"
-                                  BorderThickness="1"
-                                  BorderBrush="#ABADB3"
-                                  CanUserSortColumns="False">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="#" Binding="{Binding HopLabel}" Width="40"/>
-                                <DataGridTextColumn Header="角色" Binding="{Binding RoleName}" Width="120"/>
-                                <DataGridTextColumn Header="节点名称" Binding="{Binding DisplayName}" Width="*"/>
-                                <DataGridTextColumn Header="节点信息" Binding="{Binding NodeInfo}" Width="200"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-
-                        <StackPanel Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Top">
-                            <Button Content="上移 ↑" Padding="16,6" Margin="0,0,0,6" Command="{Binding MoveUpCommand}" />
-                            <Button Content="下移 ↓" Padding="16,6" Margin="0,0,0,6" Command="{Binding MoveDownCommand}" />
-                            <Button Content="移除" Padding="16,6" Margin="0,0,0,12" Command="{Binding RemoveFromChainCommand}" />
-                            <Button Content="清空" Padding="16,6" Command="{Binding ClearChainCommand}" />
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- 底部提示 -->
-                    <Border Grid.Row="4" Background="#FFFBE6" BorderBrush="#F0D060" BorderThickness="1" CornerRadius="4" Padding="10,6" Margin="0,8,0,0">
-                        <StackPanel>
-                            <TextBlock FontSize="12" Foreground="#806000" TextWrapping="Wrap"
-                                       Text="提示：第一个节点是入口(你直接连接的服务器)，最后一个节点是出口(目标网站看到的 IP)。" />
-                            <TextBlock FontSize="11" Foreground="#A08000" TextWrapping="Wrap" Margin="0,2,0,0"
-                                       Text="DNS 防泄漏已内置：所有链中节点域名均通过直连 DNS 解析，远程 DNS 查询走代理链加密通道。" />
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </TabItem>
 
             <TabItem Header="全球雷达">
                 <Grid DataContext="{Binding Dashboard}">
