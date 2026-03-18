@@ -35,6 +35,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private DashboardViewModel _dashboard;
     private SettingsViewModel _settingsViewModel;
     private ChainProxyViewModel _chainProxy;
+    private MitmCaptureViewModel _mitmCapture;
 
     private bool _enableSystemProxy;
     private string _statusText;
@@ -107,6 +108,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
         _chainProxy = new ChainProxyViewModel(this, settings.EnableChainProxy, settings.ChainProxyNodeIds?.ToList());
+        _mitmCapture = new MitmCaptureViewModel();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -114,6 +116,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public DashboardViewModel Dashboard => _dashboard;
     public SettingsViewModel Settings => _settingsViewModel;
     public ChainProxyViewModel ChainProxy => _chainProxy;
+    public MitmCaptureViewModel MitmCapture => _mitmCapture;
 
     public AsyncRelayCommand ConnectCommand { get; }
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
