@@ -391,21 +391,27 @@
                             <TabItem Header="Request">
                                 <Grid>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
+                                        <RowDefinition Height="5" />
+                                        <RowDefinition Height="120" />
                                     </Grid.RowDefinitions>
-                                    <!-- Query Params 区域 -->
-                                    <Border Grid.Row="0" Background="#F9F9F9" BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="6,4">
-                                        <TextBox Text="{Binding SelectedQueryParams, Mode=OneWay}" 
-                                                 IsReadOnly="True" TextWrapping="Wrap" Background="Transparent"
-                                                 FontFamily="Consolas" FontSize="10" BorderThickness="0" 
-                                                 MaxHeight="120" VerticalScrollBarVisibility="Auto" />
-                                    </Border>
                                     <!-- Request Headers 区域 -->
-                                    <TextBox Grid.Row="1" Text="{Binding SelectedRequestHeaders, Mode=OneWay}" 
+                                    <TextBox Grid.Row="0" Text="{Binding SelectedRequestHeaders, Mode=OneWay}" 
                                              IsReadOnly="True" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                                             FontFamily="Consolas" FontSize="13" BorderThickness="0" />
+                                    
+                                    <!-- 可拖动分隔线 -->
+                                    <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" 
+                                                  Background="#DDD" />
+                                    
+                                    <!-- Query Params 区域 -->
+                                    <Border Grid.Row="2" Background="#F9F9F9" BorderBrush="#DDD" BorderThickness="0,1,0,0" Padding="6,4">
+                                        <TextBox Text="{Binding SelectedQueryParams, Mode=OneWay}" 
+                                                 IsReadOnly="True" TextWrapping="Wrap" Background="Transparent"
+                                                 FontFamily="Consolas" FontSize="12" BorderThickness="0" 
+                                                 VerticalScrollBarVisibility="Auto" />
+                                    </Border>
                                 </Grid>
                             </TabItem>
                             <TabItem Header="Request Body">
@@ -419,14 +425,14 @@
                                     <TextBox Grid.Row="1" Text="{Binding SelectedRequestBody, Mode=OneWay}" 
                                              IsReadOnly="True" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                                             FontFamily="Consolas" FontSize="13" BorderThickness="0" />
                                 </Grid>
                             </TabItem>
                             <TabItem Header="Response Headers">
                                 <TextBox Text="{Binding SelectedResponseHeaders, Mode=OneWay}" 
                                          IsReadOnly="True" TextWrapping="Wrap"
                                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                         FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                                         FontFamily="Consolas" FontSize="13" BorderThickness="0" />
                             </TabItem>
                             <TabItem Header="Response Body">
                                 <Grid>
@@ -439,7 +445,7 @@
                                     <TextBox Grid.Row="1" Text="{Binding SelectedResponseBody, Mode=OneWay}" 
                                              IsReadOnly="True" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                             FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                                             FontFamily="Consolas" FontSize="13" BorderThickness="0" />
                                 </Grid>
                             </TabItem>
                         </TabControl>
