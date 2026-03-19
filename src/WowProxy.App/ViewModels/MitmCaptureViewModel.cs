@@ -549,7 +549,12 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             try
             {
                 var doc = System.Text.Json.JsonDocument.Parse(trimmed);
-                return System.Text.Json.JsonSerializer.Serialize(doc, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                var options = new System.Text.Json.JsonSerializerOptions 
+                { 
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                };
+                return System.Text.Json.JsonSerializer.Serialize(doc, options);
             }
             catch { }
         }
