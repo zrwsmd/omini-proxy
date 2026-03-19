@@ -8,8 +8,10 @@ namespace WowProxy.App.ViewModels;
 
 /// <summary>
 /// ViewModel for the MITM packet capture tab.
-/// Captures ALL traffic. Post-capture display filters (like Wireshark) let users
-/// narrow down by field, operator, value, and regex.
+/// Captures ALL traffic. Single mitmproxy-style search bar with prefix commands:
+///   ~d domain, ~u url, ~m method, ~c status, ~b body, ~bq req body, ~bs resp body,
+///   ~h header, ~hq req header, ~hs resp header, ~dst ip, ~e error, ~t content-type
+/// No prefix = fuzzy match all fields. Append " regex" or use ~d regex pattern.
 /// Works standalone — no sing-box connection required.
 /// </summary>
 public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
@@ -20,31 +22,43 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
     private int _mitmPort = 10811;
     private string _mitmPortText = "10811";
     private CapturedHttpMessage? _selectedMessage;
-    private string _statusText = "就绪 — 点击「开始抓包」捕获所有流量，然后用显示过滤器筛选";
+    private string _statusText = "就绪 — 输入搜索条件过滤，如 ~d openai 或 ~b system，留空显示全部";
     private bool _caInstalled;
 
     // All captured messages (unfiltered)
     private readonly List<CapturedHttpMessage> _allMessages = new();
     private readonly object _allMessagesLock = new();
 
-    // Display filter
-    private string _filterField = "all";
-    private string _filterOperator = "contains";
-    private string _filterValue = "";
-    private bool _filterRegex;
+    // Single search text (mitmproxy-style)
+    private string _searchText = "";
     private int _capturedCount;
     private int _displayedCount;
+
+    /// <summary>Supported search prefixes (mitmproxy-style).</summary>
+    private static readonly Dictionary<string, string> PrefixToField = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["~d"]       = "host",
+        ["~u"]       = "url",
+        ["~path"]    = "path",
+        ["~m"]       = "method",
+        ["~c"]       = "status",
+        ["~b"]       = "all_body",
+        ["~bq"]      = "req.body",
+        ["~bs"]      = "resp.body",
+        ["~h"]       = "all_header",
+        ["~hq"]      = "req.header",
+        ["~hs"]      = "resp.header",
+        ["~dst"]     = "ip",
+        ["~e"]       = "error",
+        ["~t"]       = "content_type",
+        ["~s"]       = "status",
+        ["~all"]     = "all",
+    };
 
     public MitmCaptureViewModel()
     {
         _ca = new MitmCertificateAuthority();
         CapturedMessages = new ObservableCollection<CapturedHttpMessage>();
-        FilterFields = new ObservableCollection<string>(CapturedHttpMessage.FilterFieldNames);
-        FilterOperators = new ObservableCollection<string>(new[]
-        {
-            "contains", "not contains", "equals", "not equals",
-            "starts with", "ends with", "regex", ">", "<"
-        });
 
         StartCommand = new RelayCommand(_ => ToggleStartStop());
         ClearCommand = new RelayCommand(_ => Clear());
@@ -70,8 +84,10 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
     public RelayCommand ClearFilterCommand { get; }
 
     public ObservableCollection<CapturedHttpMessage> CapturedMessages { get; }
-    public ObservableCollection<string> FilterFields { get; }
-    public ObservableCollection<string> FilterOperators { get; }
+
+    /// <summary>Search hint text shown as watermark.</summary>
+    public static string SearchHint =>
+        "搜索: 直接输入模糊匹配 | ~d 域名 | ~u URL | ~m 方法 | ~c 状态码 | ~b Body | ~bq 请求体 | ~bs 响应体 | ~h Header | ~dst IP | ~e 错误 | 支持正则";
 
     public bool IsRunning
     {
@@ -87,29 +103,11 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         set { if (_mitmPortText != value) { _mitmPortText = value; OnPropertyChanged(); } }
     }
 
-    // Display filter properties
-    public string FilterField
+    // Single search bar
+    public string SearchText
     {
-        get => _filterField;
-        set { if (_filterField != value) { _filterField = value; OnPropertyChanged(); } }
-    }
-
-    public string FilterOperator
-    {
-        get => _filterOperator;
-        set { if (_filterOperator != value) { _filterOperator = value; OnPropertyChanged(); } }
-    }
-
-    public string FilterValue
-    {
-        get => _filterValue;
-        set { if (_filterValue != value) { _filterValue = value; OnPropertyChanged(); } }
-    }
-
-    public bool FilterRegex
-    {
-        get => _filterRegex;
-        set { if (_filterRegex != value) { _filterRegex = value; OnPropertyChanged(); } }
+        get => _searchText;
+        set { if (_searchText != value) { _searchText = value; OnPropertyChanged(); } }
     }
 
     public int CapturedCount
@@ -139,6 +137,7 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
                 OnPropertyChanged(nameof(SelectedRequestBody));
                 OnPropertyChanged(nameof(SelectedResponseHeaders));
                 OnPropertyChanged(nameof(SelectedResponseBody));
+                OnPropertyChanged(nameof(SelectedQueryParams));
                 OnPropertyChanged(nameof(SelectedSummary));
                 OnPropertyChanged(nameof(HasSelection));
             }
@@ -156,7 +155,7 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             return $"[{msg.Protocol}] {msg.Method} {msg.Url}\n" +
                    $"Host: {msg.Host}  IP: {msg.RemoteAddress}:{msg.RemotePort}\n" +
                    $"状态码: {msg.StatusCode}  耗时: {msg.DurationMs}ms  " +
-                   $"请求大小: {msg.RequestSize}B  响应大小: {msg.ResponseSize}B" +
+                   $"请求: {FormatSize(msg.RequestSize)}  响应: {FormatSize(msg.ResponseSize)}" +
                    (msg.Error != null ? $"\n错误: {msg.Error}" : "");
         }
     }
@@ -174,6 +173,57 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             sb.AppendLine();
             foreach (var (k, v) in _selectedMessage.RequestHeaders)
                 sb.AppendLine($"{k}: {v}");
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>Parse URL query string into a readable key=value view.</summary>
+    public string SelectedQueryParams
+    {
+        get
+        {
+            if (_selectedMessage == null) return "";
+            var url = _selectedMessage.Url;
+            var qIdx = url.IndexOf('?');
+            if (qIdx < 0 || qIdx >= url.Length - 1) return "(无 Query 参数)";
+
+            var queryString = url[(qIdx + 1)..];
+            // Remove fragment
+            var fragIdx = queryString.IndexOf('#');
+            if (fragIdx >= 0) queryString = queryString[..fragIdx];
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Path: {_selectedMessage.Path?.Split('?')[0]}");
+            sb.AppendLine();
+
+            var pairs = queryString.Split('&', StringSplitOptions.RemoveEmptyEntries);
+            var maxKeyLen = 0;
+            var parsed = new List<(string key, string value)>();
+            foreach (var pair in pairs)
+            {
+                var eqIdx = pair.IndexOf('=');
+                string key, val;
+                if (eqIdx >= 0)
+                {
+                    key = Uri.UnescapeDataString(pair[..eqIdx]);
+                    val = Uri.UnescapeDataString(pair[(eqIdx + 1)..]);
+                }
+                else
+                {
+                    key = Uri.UnescapeDataString(pair);
+                    val = "";
+                }
+                parsed.Add((key, val));
+                if (key.Length > maxKeyLen) maxKeyLen = key.Length;
+            }
+
+            foreach (var (key, val) in parsed)
+            {
+                sb.AppendLine($"{key.PadRight(maxKeyLen)}  =  {val}");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"共 {parsed.Count} 个参数");
             return sb.ToString();
         }
     }
@@ -249,13 +299,12 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             _server = new MitmProxyServer(_ca);
-            // No domain filter — capture everything
             _server.OnMessageCaptured += OnMessageCapturedCallback;
             _server.OnLog += OnLogCallback;
             _server.Start(port);
 
             IsRunning = true;
-            StatusText = $"抓包运行中 — 代理地址 127.0.0.1:{port}（捕获全部流量，用过滤器筛选）";
+            StatusText = $"抓包运行中 — 127.0.0.1:{port} — 输入搜索条件过滤";
         }
         catch (Exception ex)
         {
@@ -288,23 +337,19 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
 
     #endregion
 
-    #region Filter
+    #region Filter — mitmproxy-style single search bar
 
     private void ApplyFilter()
     {
         RebuildDisplayList();
-        var activeFilter = string.IsNullOrWhiteSpace(FilterValue)
-            ? "无过滤"
-            : $"过滤: {FilterField} {FilterOperator} \"{FilterValue}\"{(FilterRegex ? " (regex)" : "")}";
-        StatusText = $"{activeFilter} — {CountText}";
+        StatusText = string.IsNullOrWhiteSpace(SearchText)
+            ? $"显示全部 — {CountText}"
+            : $"过滤: {SearchText} — {CountText}";
     }
 
     private void ClearFilter()
     {
-        FilterValue = "";
-        FilterField = "all";
-        FilterOperator = "contains";
-        FilterRegex = false;
+        SearchText = "";
         RebuildDisplayList();
         StatusText = $"过滤已清除 — {CountText}";
     }
@@ -319,42 +364,85 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
 
         foreach (var msg in snapshot)
         {
-            if (MatchesFilter(msg))
+            if (MatchesSearch(msg))
                 CapturedMessages.Add(msg);
         }
 
         DisplayedCount = CapturedMessages.Count;
     }
 
-    private bool MatchesFilter(CapturedHttpMessage msg)
+    /// <summary>
+    /// Parse mitmproxy-style search text and match against a message.
+    /// Format: [~prefix] value
+    /// No prefix → fuzzy match all fields (contains, case-insensitive).
+    /// Prefix → match specific field. Value is treated as regex if it looks like one,
+    /// otherwise as case-insensitive contains (fuzzy).
+    /// </summary>
+    private bool MatchesSearch(CapturedHttpMessage msg)
     {
-        if (string.IsNullOrWhiteSpace(FilterValue)) return true;
+        var text = SearchText?.Trim();
+        if (string.IsNullOrEmpty(text)) return true;
 
-        var fieldValue = msg.GetField(FilterField);
-        var filterVal = FilterValue;
+        // Parse prefix
+        string field = "all";
+        string pattern = text;
 
-        // If regex mode is on, use regex regardless of operator
-        if (FilterRegex || FilterOperator == "regex")
+        if (text.StartsWith('~'))
         {
-            try
+            var spaceIdx = text.IndexOf(' ');
+            if (spaceIdx > 0)
             {
-                return Regex.IsMatch(fieldValue, filterVal, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                var prefix = text[..spaceIdx];
+                if (PrefixToField.TryGetValue(prefix, out var mappedField))
+                {
+                    field = mappedField;
+                    pattern = text[(spaceIdx + 1)..].Trim();
+                }
             }
-            catch { return false; }
+            else
+            {
+                // Just prefix with no value, e.g. "~e" → show only messages with errors
+                if (PrefixToField.TryGetValue(text, out var mappedField))
+                {
+                    field = mappedField;
+                    pattern = "";
+                }
+            }
         }
 
-        return FilterOperator switch
+        // Get target field value(s) to search
+        string fieldValue;
+        if (field == "all_body")
+            fieldValue = msg.RequestBody + "\n" + msg.ResponseBody;
+        else if (field == "all_header")
+            fieldValue = msg.GetField("req.header") + "\n" + msg.GetField("resp.header");
+        else if (field == "content_type")
+            fieldValue = msg.RequestContentType + "\n" + msg.ResponseContentType;
+        else
+            fieldValue = msg.GetField(field);
+
+        // Special case: prefix with no pattern (e.g. ~e) → just check non-empty
+        if (string.IsNullOrEmpty(pattern))
+            return !string.IsNullOrEmpty(fieldValue);
+
+        // Try regex first, fall back to fuzzy contains
+        try
         {
-            "contains" => fieldValue.Contains(filterVal, StringComparison.OrdinalIgnoreCase),
-            "not contains" => !fieldValue.Contains(filterVal, StringComparison.OrdinalIgnoreCase),
-            "equals" => fieldValue.Equals(filterVal, StringComparison.OrdinalIgnoreCase),
-            "not equals" => !fieldValue.Equals(filterVal, StringComparison.OrdinalIgnoreCase),
-            "starts with" => fieldValue.StartsWith(filterVal, StringComparison.OrdinalIgnoreCase),
-            "ends with" => fieldValue.EndsWith(filterVal, StringComparison.OrdinalIgnoreCase),
-            ">" => double.TryParse(fieldValue, out var a) && double.TryParse(filterVal, out var b) && a > b,
-            "<" => double.TryParse(fieldValue, out var c) && double.TryParse(filterVal, out var d) && c < d,
-            _ => fieldValue.Contains(filterVal, StringComparison.OrdinalIgnoreCase),
-        };
+            if (IsLikelyRegex(pattern))
+                return Regex.IsMatch(fieldValue, pattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        }
+        catch { /* not valid regex, fall through to fuzzy */ }
+
+        // Fuzzy contains match
+        return fieldValue.Contains(pattern, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Detect whether a pattern is likely a regex (has special regex chars).</summary>
+    private static bool IsLikelyRegex(string pattern)
+    {
+        // If pattern contains regex-special characters, treat as regex
+        return pattern.IndexOfAny(new[] { '|', '(', ')', '[', ']', '{', '}', '\\', '^', '$', '+', '?', '.' }) >= 0
+               && pattern.Length > 1;
     }
 
     #endregion
@@ -423,8 +511,7 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             lock (_allMessagesLock) { _allMessages.Insert(0, msg); }
             CapturedCount = _allMessages.Count;
 
-            // Apply current display filter
-            if (MatchesFilter(msg))
+            if (MatchesSearch(msg))
             {
                 CapturedMessages.Insert(0, msg);
                 while (CapturedMessages.Count > 2000)
@@ -443,6 +530,15 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
     }
 
     #endregion
+
+    /// <summary>Format byte size to human-readable string like mitmproxy (e.g. 1.2kb).</summary>
+    public static string FormatSize(long bytes)
+    {
+        if (bytes <= 0) return "0";
+        if (bytes < 1024) return $"{bytes}b";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#}kb";
+        return $"{bytes / (1024.0 * 1024.0):0.#}mb";
+    }
 
     private static string TryFormatJson(string text)
     {

@@ -36,6 +36,19 @@ public sealed class CapturedHttpMessage
     public string? Error { get; set; }
     public bool IsCompleted { get; set; }
 
+    /// <summary>Human-readable response size (e.g. "1.2kb") like mitmproxy.</summary>
+    public string DisplaySize
+    {
+        get
+        {
+            var bytes = ResponseSize;
+            if (bytes <= 0) return "0";
+            if (bytes < 1024) return $"{bytes}b";
+            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:0.#}kb";
+            return $"{bytes / (1024.0 * 1024.0):0.#}mb";
+        }
+    }
+
     /// <summary>Get a field value by name for display-filter matching.</summary>
     public string GetField(string fieldName)
     {

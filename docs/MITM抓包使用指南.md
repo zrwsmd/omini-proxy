@@ -65,66 +65,67 @@ $env:HTTPS_PROXY = "http://127.0.0.1:10811"
 
 ---
 
-## 显示过滤器
+## 搜索过滤（mitmproxy 风格）
 
-抓包默认捕获**所有流量**。使用显示过滤器可以筛选你关心的请求。
+抓包默认捕获**所有流量**。搜索栏支持 mitmproxy 风格的前缀命令来筛选。
 
-### 过滤字段说明
+### 基本用法
 
-| 字段名 | 说明 | 示例值 |
-|--------|------|--------|
-| `all` | 搜索所有字段（URL、Host、Body 等） | `openai` |
-| `host` / `sni` | 域名（SNI） | `api.openai.com` |
-| `url` | 完整 URL | `/v1/chat/completions` |
-| `path` | 请求路径 | `/v1/chat` |
-| `method` | HTTP 方法 | `POST` |
-| `status` | 响应状态码 | `200` |
-| `protocol` | 协议 | `HTTPS` |
-| `ip` | 目的 IP 地址 | `104.18.` |
-| `port` | 目的端口 | `443` |
-| `req.content-type` | 请求 Content-Type | `application/json` |
-| `resp.content-type` | 响应 Content-Type | `text/event-stream` |
-| `req.body` | 请求体内容 | `system` |
-| `resp.body` | 响应体内容 | `assistant` |
-| `req.header` | 请求头（全部） | `Authorization` |
-| `resp.header` | 响应头（全部） | `x-request-id` |
-| `error` | 错误信息 | `timeout` |
-| `duration` | 响应耗时（毫秒） | `1000` |
+**直接输入文字** = 模糊匹配所有字段（URL、Host、Body 等），不区分大小写：
+```
+openai          → 匹配任何包含 "openai" 的请求
+chat/completions → 匹配 URL 中包含该路径的请求
+```
 
-### 条件运算符
+### 前缀命令
 
-| 运算符 | 说明 |
-|--------|------|
-| `contains` | 包含（默认） |
-| `not contains` | 不包含 |
-| `equals` | 完全匹配 |
-| `not equals` | 不等于 |
-| `starts with` | 以…开头 |
-| `ends with` | 以…结尾 |
-| `regex` | 正则表达式匹配 |
-| `>` | 大于（数值比较） |
-| `<` | 小于（数值比较） |
+使用 `~前缀 关键词` 格式搜索指定字段：
 
-### 过滤示例
+| 前缀 | 说明 | 示例 |
+|------|------|------|
+| `~d` | 域名 / Host / SNI | `~d openai.com` |
+| `~u` | URL | `~u /v1/chat/completions` |
+| `~path` | 请求路径 | `~path /api/` |
+| `~m` | HTTP 方法 | `~m POST` |
+| `~c` / `~s` | 状态码 | `~c 200` |
+| `~b` | 请求体 + 响应体 | `~b system` |
+| `~bq` | 仅请求体（Request Body） | `~bq system_prompt` |
+| `~bs` | 仅响应体（Response Body） | `~bs assistant` |
+| `~h` | 所有 Header | `~h Authorization` |
+| `~hq` | 请求 Header | `~hq Bearer` |
+| `~hs` | 响应 Header | `~hs x-request-id` |
+| `~dst` | 目的 IP 地址 | `~dst 104.18` |
+| `~t` | Content-Type | `~t application/json` |
+| `~e` | 错误（无值时显示所有有错误的请求） | `~e` 或 `~e timeout` |
+| `~all` | 搜索所有字段 | `~all openai` |
 
-**抓取所有 AI API 请求：**
-- 字段: `url`，条件: `contains`，值: `chat/completions`
+### 正则表达式支持
 
-**只看 POST 请求：**
-- 字段: `method`，条件: `equals`，值: `POST`
+搜索值中包含正则特殊字符（`|` `(` `)` `[` `]` `.` `+` `?` 等）时**自动识别为正则**：
+```
+~d openai|anthropic|cursor     → 匹配这三个域名
+~bq system.*prompt             → 请求体中正则匹配
+~u /v[12]/chat                 → URL 匹配 v1 或 v2
+openai|windsurf                → 全局模糊正则匹配
+```
 
-**查找包含系统提示词的请求：**
-- 字段: `req.body`，条件: `contains`，值: `system`
+普通字符串则按模糊包含匹配：
+```
+~d openai       → host 包含 "openai"（模糊匹配，不需要写全）
+~bq system      → 请求体包含 "system"
+```
 
-**用正则匹配多个域名：**
-- 字段: `host`，条件: `regex`，值: `openai|anthropic|cursor`
-- 或勾选 **「正则」** 复选框
+### 搜索示例
 
-**查找慢请求（>2秒）：**
-- 字段: `duration`，条件: `>`，值: `2000`
-
-**查找错误请求：**
-- 字段: `status`，条件: `>`，值: `399`
+| 目标 | 搜索输入 |
+|------|----------|
+| 所有 AI API 请求 | `~u chat/completions` |
+| 只看 POST 请求 | `~m POST` |
+| 查找系统提示词 | `~bq system` |
+| 匹配多个 AI 域名 | `~d openai\|anthropic\|cursor` |
+| 查看有错误的请求 | `~e` |
+| 只看 JSON 响应 | `~t application/json` |
+| 某个 IP 段的请求 | `~dst 104.18` |
 
 ---
 
@@ -135,11 +136,14 @@ $env:HTTPS_PROXY = "http://127.0.0.1:10811"
 | 标签页 | 内容 |
 |--------|------|
 | **Request Headers** | 请求方法、URL、Host、IP、所有请求头 |
+| **Query Params** | URL 查询参数，解析为 key = value 格式（GET 请求参数一目了然） |
 | **Request Body** | 请求体明文（JSON 自动格式化缩进） |
 | **Response Headers** | 状态码、所有响应头 |
 | **Response Body** | 响应体明文（JSON 自动格式化缩进） |
 
 **复制内容：** 在 Request Body / Response Body 页面点击 **「复制」** 按钮即可复制到剪贴板。
+
+**Size 列说明：** 列表中的 Size 列显示响应包大小，格式为人类可读的 `1.2kb`、`340b` 等。
 
 ---
 

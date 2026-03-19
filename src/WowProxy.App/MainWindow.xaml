@@ -334,37 +334,23 @@
                         </TextBlock>
                     </WrapPanel>
 
-                    <!-- Row 1: 显示过滤器 (Wireshark 风格) -->
+                    <!-- Row 1: 搜索栏 (mitmproxy 风格单行搜索) -->
                     <Border Grid.Row="1" Background="#F0F4FF" BorderBrush="#B0C4DE" BorderThickness="1" CornerRadius="3" Padding="6,4" Margin="0,0,0,6">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="120" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="120" />
-                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="过滤字段:" VerticalAlignment="Center" Margin="0,0,4,0" FontSize="11" />
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding FilterFields}" 
-                                      SelectedItem="{Binding FilterField}" FontSize="11" />
-                            <TextBlock Grid.Column="2" Text="  条件:" VerticalAlignment="Center" Margin="0,0,4,0" FontSize="11" />
-                            <ComboBox Grid.Column="3" ItemsSource="{Binding FilterOperators}" 
-                                      SelectedItem="{Binding FilterOperator}" FontSize="11" />
-                            <TextBlock Grid.Column="4" Text="  值:" VerticalAlignment="Center" Margin="0,0,4,0" FontSize="11" />
-                            <TextBox Grid.Column="5" Text="{Binding FilterValue, UpdateSourceTrigger=PropertyChanged}" 
-                                     FontSize="11" FontFamily="Consolas" VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <CheckBox Grid.Column="6" Content="正则" IsChecked="{Binding FilterRegex}" 
-                                      VerticalAlignment="Center" Margin="0,0,6,0" FontSize="11" />
-                            <Button Grid.Column="7" Content="应用" Padding="10,2" FontSize="11" Margin="0,0,4,0"
+                            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                                     FontSize="12" FontFamily="Consolas" VerticalAlignment="Center"
+                                     ToolTip="{Binding SearchHint}" />
+                            <Button Grid.Column="1" Content="搜索" Padding="12,2" FontSize="11" Margin="6,0,4,0"
                                     Command="{Binding ApplyFilterCommand}" />
-                            <Button Grid.Column="8" Content="清除" Padding="10,2" FontSize="11"
+                            <Button Grid.Column="2" Content="清除" Padding="10,2" FontSize="11"
                                     Command="{Binding ClearFilterCommand}" />
-                            <TextBlock Grid.Column="9" Text="{Binding CountText}" VerticalAlignment="Center" 
+                            <TextBlock Grid.Column="3" Text="{Binding CountText}" VerticalAlignment="Center" 
                                        Margin="8,0,0,0" FontSize="11" Foreground="#555" />
                         </Grid>
                     </Border>
@@ -394,7 +380,7 @@
                                 <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" />
                                 <DataGridTextColumn Header="状态" Binding="{Binding StatusCode}" Width="42" />
                                 <DataGridTextColumn Header="ms" Binding="{Binding DurationMs}" Width="45" />
-                                <DataGridTextColumn Header="大小" Binding="{Binding ResponseSize}" Width="55" />
+                                <DataGridTextColumn Header="Size" Binding="{Binding DisplaySize}" Width="55" />
                             </DataGrid.Columns>
                         </DataGrid>
 
@@ -404,6 +390,12 @@
                         <TabControl Grid.Column="2" Margin="4,0,0,0">
                             <TabItem Header="Request Headers">
                                 <TextBox Text="{Binding SelectedRequestHeaders, Mode=OneWay}" 
+                                         IsReadOnly="True" TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                         FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                            </TabItem>
+                            <TabItem Header="Query Params">
+                                <TextBox Text="{Binding SelectedQueryParams, Mode=OneWay}" 
                                          IsReadOnly="True" TextWrapping="Wrap"
                                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                                          FontFamily="Consolas" FontSize="11" BorderThickness="0" />
