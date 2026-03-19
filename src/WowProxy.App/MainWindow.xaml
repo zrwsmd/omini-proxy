@@ -388,17 +388,25 @@
 
                         <!-- 详情面板 -->
                         <TabControl Grid.Column="2" Margin="4,0,0,0">
-                            <TabItem Header="Request Headers">
-                                <TextBox Text="{Binding SelectedRequestHeaders, Mode=OneWay}" 
-                                         IsReadOnly="True" TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                         FontFamily="Consolas" FontSize="11" BorderThickness="0" />
-                            </TabItem>
-                            <TabItem Header="Query Params">
-                                <TextBox Text="{Binding SelectedQueryParams, Mode=OneWay}" 
-                                         IsReadOnly="True" TextWrapping="Wrap"
-                                         VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                                         FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                            <TabItem Header="Request">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <!-- Query Params 区域 -->
+                                    <Border Grid.Row="0" Background="#F9F9F9" BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="6,4">
+                                        <TextBox Text="{Binding SelectedQueryParams, Mode=OneWay}" 
+                                                 IsReadOnly="True" TextWrapping="Wrap" Background="Transparent"
+                                                 FontFamily="Consolas" FontSize="10" BorderThickness="0" 
+                                                 MaxHeight="120" VerticalScrollBarVisibility="Auto" />
+                                    </Border>
+                                    <!-- Request Headers 区域 -->
+                                    <TextBox Grid.Row="1" Text="{Binding SelectedRequestHeaders, Mode=OneWay}" 
+                                             IsReadOnly="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                                             FontFamily="Consolas" FontSize="11" BorderThickness="0" />
+                                </Grid>
                             </TabItem>
                             <TabItem Header="Request Body">
                                 <Grid>
