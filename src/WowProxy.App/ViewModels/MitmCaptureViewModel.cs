@@ -543,7 +543,19 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
     private static string TryFormatJson(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return "";
+        
+        // Clean up replacement characters (�) that appear from encoding issues
+        text = text.Replace("\uFFFD", "");
+        
         var trimmed = text.TrimStart();
+        
+        // Check if it's SSE (Server-Sent Events) format
+        if (trimmed.Contains("event-type:") || trimmed.Contains("message-type:"))
+        {
+            return FormatSseStream(text);
+        }
+        
+        // Try to parse as JSON
         if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
         {
             try
@@ -559,6 +571,56 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             catch { }
         }
         return text;
+    }
+
+    /// <summary>Format SSE (Server-Sent Events) stream for better readability.</summary>
+    private static string FormatSseStream(string sseText)
+    {
+        var sb = new System.Text.StringBuilder();
+        var lines = sseText.Split('\n');
+        var eventCount = 0;
+        var jsonOptions = new System.Text.Json.JsonSerializerOptions 
+        { 
+            WriteIndented = true,
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+
+            // Detect event boundaries
+            if (trimmed.StartsWith("event-type:"))
+            {
+                if (eventCount > 0) sb.AppendLine("\n" + new string('-', 60));
+                eventCount++;
+                sb.AppendLine($"[Event #{eventCount}]");
+            }
+
+            // Try to extract and format JSON from message-type
+            if (trimmed.StartsWith("message-type:"))
+            {
+                var jsonStart = trimmed.IndexOf('{');
+                if (jsonStart > 0)
+                {
+                    var jsonPart = trimmed[jsonStart..];
+                    try
+                    {
+                        var doc = System.Text.Json.JsonDocument.Parse(jsonPart);
+                        var formatted = System.Text.Json.JsonSerializer.Serialize(doc, jsonOptions);
+                        sb.AppendLine("message-type: event");
+                        sb.AppendLine(formatted);
+                        continue;
+                    }
+                    catch { }
+                }
+            }
+
+            sb.AppendLine(trimmed);
+        }
+
+        return sb.ToString();
     }
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
