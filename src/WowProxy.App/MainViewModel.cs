@@ -1276,6 +1276,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         try
         {
+            var userRules = _userRules.GetRules();
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"保存设置：共 {userRules.Count} 条规则"));
+            
             _settings = _settings with
             {
                 Nodes = _nodes.Select(n => n.Node).ToList(),
@@ -1289,11 +1292,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 SubscriptionGroups = _subscriptionGroups.ToList(),
                 EnableChainProxy = _chainProxy.EnableChainProxy,
                 ChainProxyNodeIds = _chainProxy.GetChainNodeIds(),
-                UserRules = _userRules.GetRules(),
+                UserRules = userRules,
             };
             await _settingsStore.SaveAsync(_settings);
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, "设置已保存"));
         }
-        catch { }
+        catch (Exception ex)
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Error, $"保存设置失败: {ex.Message}"));
+        }
     }
 
     private async Task TestLatencyAsync()

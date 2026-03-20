@@ -51,6 +51,10 @@
                 </Grid.RowDefinitions>
                 
                 <Grid Grid.Row="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="140" />
                         <ColumnDefinition Width="*" />
@@ -59,7 +63,14 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <ComboBox Grid.Column="0" ItemsSource="{Binding Source={StaticResource RuleTypeEnum}}" 
+                    <!-- 标签行 -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="规则类型" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="规则值" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="出站动作" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+                    <TextBlock Grid.Row="0" Grid.Column="3" Text="备注（可选）" FontSize="11" Foreground="#666" Margin="0,0,0,4" />
+
+                    <!-- 输入行 -->
+                    <ComboBox Grid.Row="1" Grid.Column="0" ItemsSource="{Binding Source={StaticResource RuleTypeEnum}}" 
                               SelectedItem="{Binding NewType}" Margin="0,0,8,0">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -68,7 +79,7 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
-                    <TextBox Grid.Column="1" Text="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" 
+                    <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" 
                              Margin="0,0,8,0" VerticalContentAlignment="Center">
                         <TextBox.Style>
                             <Style TargetType="TextBox">
@@ -85,7 +96,7 @@
                         </TextBox.ToolTip>
                     </TextBox>
 
-                    <ComboBox Grid.Column="2" ItemsSource="{Binding Source={StaticResource RuleActionEnum}}" 
+                    <ComboBox Grid.Row="1" Grid.Column="2" ItemsSource="{Binding Source={StaticResource RuleActionEnum}}" 
                               SelectedItem="{Binding NewAction}" Margin="0,0,8,0">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -94,19 +105,10 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
-                    <TextBox Grid.Column="3" Text="{Binding NewRemark, UpdateSourceTrigger=PropertyChanged}" 
-                             Margin="0,0,8,0" VerticalContentAlignment="Center">
-                        <TextBox.Style>
-                            <Style TargetType="TextBox">
-                                <Setter Property="Background" Value="White" />
-                            </Style>
-                        </TextBox.Style>
-                        <TextBox.ToolTip>
-                            <ToolTip Content="备注（可选）" />
-                        </TextBox.ToolTip>
-                    </TextBox>
+                    <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding NewRemark, UpdateSourceTrigger=PropertyChanged}" 
+                             Margin="0,0,8,0" VerticalContentAlignment="Center" />
 
-                    <Button Grid.Column="4" Content="添加规则" Padding="16,4" Command="{Binding AddRuleCommand}" />
+                    <Button Grid.Row="1" Grid.Column="4" Content="添加规则" Padding="16,4" Command="{Binding AddRuleCommand}" />
                 </Grid>
 
                 <!-- 验证错误提示 -->
