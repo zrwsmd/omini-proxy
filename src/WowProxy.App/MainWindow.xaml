@@ -93,53 +93,70 @@
                             </Grid>
 
                             <!-- 分组 Tab 栏 -->
-                            <ListBox Grid.Row="2"
-                                     ItemsSource="{Binding NodeGroups}"
-                                     SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
-                                     BorderThickness="0,0,0,1"
-                                     BorderBrush="#DDD"
-                                     Background="Transparent"
-                                     Margin="0,0,0,4"
-                                     Padding="0">
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <StackPanel Orientation="Horizontal" />
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-                                <ListBox.ItemContainerStyle>
-                                    <Style TargetType="ListBoxItem">
-                                        <Setter Property="Padding" Value="12,6" />
-                                        <Setter Property="Margin" Value="0,0,2,0" />
-                                        <Setter Property="Background" Value="#F0F0F0" />
-                                        <Setter Property="BorderBrush" Value="#CCC" />
-                                        <Setter Property="BorderThickness" Value="1,1,1,0" />
-                                        <Setter Property="Cursor" Value="Hand" />
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="ListBoxItem">
-                                                    <Border Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            Padding="{TemplateBinding Padding}"
-                                                            CornerRadius="4,4,0,0">
-                                                        <ContentPresenter />
-                                                    </Border>
-                                                    <ControlTemplate.Triggers>
-                                                        <Trigger Property="IsSelected" Value="True">
-                                                            <Setter Property="Background" Value="White" />
-                                                            <Setter Property="BorderBrush" Value="#888" />
-                                                            <Setter Property="FontWeight" Value="Bold" />
-                                                        </Trigger>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Background" Value="#E8E8E8" />
-                                                        </Trigger>
-                                                    </ControlTemplate.Triggers>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </ListBox.ItemContainerStyle>
-                            </ListBox>
+                            <Grid Grid.Row="2" Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                
+                                <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <ListBox ItemsSource="{Binding NodeGroups}"
+                                             SelectedItem="{Binding SelectedGroup, Mode=TwoWay}"
+                                             BorderThickness="0,0,0,1"
+                                             BorderBrush="#DDD"
+                                             Background="Transparent"
+                                             Padding="0">
+                                        <ListBox.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ListBox.ItemsPanel>
+                                        <ListBox.ItemContainerStyle>
+                                            <Style TargetType="ListBoxItem">
+                                                <Setter Property="Padding" Value="12,6" />
+                                                <Setter Property="Margin" Value="0,0,2,0" />
+                                                <Setter Property="Background" Value="#F0F0F0" />
+                                                <Setter Property="BorderBrush" Value="#CCC" />
+                                                <Setter Property="BorderThickness" Value="1,1,1,0" />
+                                                <Setter Property="Cursor" Value="Hand" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="ListBoxItem">
+                                                            <Border Background="{TemplateBinding Background}"
+                                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                                    Padding="{TemplateBinding Padding}"
+                                                                    CornerRadius="4,4,0,0">
+                                                                <ContentPresenter />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsSelected" Value="True">
+                                                                    <Setter Property="Background" Value="White" />
+                                                                    <Setter Property="BorderBrush" Value="#888" />
+                                                                    <Setter Property="FontWeight" Value="Bold" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter Property="Background" Value="#E8E8E8" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </ListBox.ItemContainerStyle>
+                                    </ListBox>
+                                </ScrollViewer>
+                                
+                                <Button Grid.Column="1" Content="+" Width="32" Height="28" ToolTip="新建分组" VerticalAlignment="Bottom" Margin="4,0,0,1" 
+                                        Command="{Binding CreateGroupCommand}" Background="#F0F0F0" BorderBrush="#CCC" BorderThickness="1" 
+                                        Foreground="#666" FontSize="18" FontWeight="Bold" Cursor="Hand">
+                                    <Button.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </Button.Resources>
+                                </Button>
+                            </Grid>
 
                             <!-- 高级设置：链式代理 (可展开面板) -->
                             <Expander Grid.Row="3" Header="🚀 高级：链式代理配置" Margin="0,0,0,8" 

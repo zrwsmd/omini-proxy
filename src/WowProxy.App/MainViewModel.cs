@@ -105,6 +105,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
         CopyNodeLinkCommand = new RelayCommand(_ => CopyNodeLink());
         SetGroupCommand = new RelayCommand(_ => SetGroupForSelectedNodes());
+        CreateGroupCommand = new RelayCommand(_ => CreateNewGroup());
 
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
@@ -130,6 +131,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public AsyncRelayCommand TestSpeedCommand { get; }
     public RelayCommand CopyNodeLinkCommand { get; }
     public RelayCommand SetGroupCommand { get; }
+    public RelayCommand CreateGroupCommand { get; }
 
     public string? SingBoxPath => _settingsViewModel.SingBoxPath;
     public bool EnableClashApi => _settingsViewModel.EnableClashApi;
@@ -359,6 +361,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
+
+    private void CreateNewGroup()
+    {
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            var dialog = new Views.PromptWindow("新建分组", "请输入新分组名称:", "");
+            if (System.Windows.Application.Current.MainWindow != null)
+                dialog.Owner = System.Windows.Application.Current.MainWindow;
+
+            if (dialog.ShowDialog() == true)
+            {
+                var newGroup = dialog.InputText.Trim();
+                if (string.IsNullOrEmpty(newGroup)) return;
+
+                // Use an empty URL to mark it as a manual group
+                if (!_subscriptionGroups.Any(g => string.Equals(g.GroupName, newGroup, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _subscriptionGroups.Add(new SubscriptionEntry(newGroup, ""));
+                    RebuildNodeGroups();
+                    SelectedGroup = newGroup;
+                    _ = PersistSelectionAsync();
+                }
+            }
+        });
+    }
 
     private void SetGroupForSelectedNodes()
     {
