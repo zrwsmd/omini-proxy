@@ -41,7 +41,11 @@ internal sealed class TrayIconManager : IDisposable
             ContextMenuStrip = contextMenu,
         };
 
-        _notifyIcon.DoubleClick += OnShowClicked;
+        _notifyIcon.MouseClick += (s, e) =>
+        {
+            if (e.Button == MouseButtons.Left)
+                OnShowClicked(s, EventArgs.Empty);
+        };
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
         UpdateTooltip();
@@ -110,30 +114,69 @@ internal sealed class TrayIconManager : IDisposable
     }
 
     /// <summary>
-    /// 使用 GDI+ 绘制一个简单的圆点图标作为托盘图标，颜色根据内核状态变化。
+    /// 使用 GDI+ 绘制一个精美的现代风格托盘图标，颜色和图形根据内核状态变化。
     /// </summary>
     private static Icon CreateGraphicIcon(CoreState state)
     {
-        using var bmp = new Bitmap(16, 16);
+        int size = 32;
+        using var bmp = new Bitmap(size, size);
         using (var g = Graphics.FromImage(bmp))
         {
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
             g.Clear(Color.Transparent);
 
-            // 根据状态选择颜色
-            Color mainColor = state switch
+            // 现代扁平色系 (参考 Tailwind CSS)
+            Color stateColor = state switch
             {
-                CoreState.Running => Color.FromArgb(0x32, 0xCD, 0x32), // LimeGreen
-                CoreState.Starting => Color.FromArgb(0xFF, 0x8C, 0x00), // DarkOrange
-                CoreState.Faulted => Color.FromArgb(0xDC, 0x14, 0x3C), // Crimson
-                CoreState.Stopping => Color.FromArgb(0x80, 0x80, 0x80), // Gray
-                _ => Color.FromArgb(0x1E, 0x90, 0xFF) // DodgerBlue (Stopped)
+                CoreState.Running => Color.FromArgb(255, 34, 197, 94),   // 翠绿 (Green 500)
+                CoreState.Starting => Color.FromArgb(255, 245, 158, 11), // 活力橙 (Amber 500)
+                CoreState.Faulted => Color.FromArgb(255, 239, 68, 68),   // 警示红 (Red 500)
+                CoreState.Stopping => Color.FromArgb(255, 156, 163, 175),// 高级灰 (Gray 400)
+                _ => Color.FromArgb(255, 59, 130, 246)                   // 科技蓝 (Blue 500)
             };
 
-            using var brush = new SolidBrush(mainColor);
-            g.FillEllipse(brush, 1, 1, 14, 14);
+            // 1. 绘制外部圆形底板 (深色高级质感)
+            using var bgBrush = new SolidBrush(Color.FromArgb(255, 30, 41, 59)); // Slate 800
+            g.FillEllipse(bgBrush, 0, 0, 32, 32);
 
-            // 绘制一个中心白色小圆点
-            g.FillEllipse(Brushes.White, 5, 5, 6, 6);
+            // 2. 根据状态绘制光环边框
+            using var ringPen = new Pen(stateColor, 2f);
+            g.DrawEllipse(ringPen, 1.5f, 1.5f, 29, 29);
+
+            // 3. 绘制中心标志
+            using var centerPen = new Pen(Color.White, 2.5f) { 
+                StartCap = System.Drawing.Drawing2D.LineCap.Round, 
+                EndCap = System.Drawing.Drawing2D.LineCap.Round,
+                LineJoin = System.Drawing.Drawing2D.LineJoin.Round
+            };
+
+            if (state == CoreState.Faulted)
+            {
+                // 错误状态画一个 X
+                g.DrawLine(centerPen, 10, 10, 22, 22);
+                g.DrawLine(centerPen, 22, 10, 10, 22);
+            }
+            else
+            {
+                // 其他状态画 WowProxy 的 'W' 标志
+                PointF[] wPoints = {
+                    new PointF(7, 12),
+                    new PointF(12, 22),
+                    new PointF(16, 15),
+                    new PointF(20, 22),
+                    new PointF(25, 12)
+                };
+                
+                if (state == CoreState.Stopped || state == CoreState.Stopping) 
+                {
+                    // 停止时 W 颜色变暗
+                    centerPen.Color = Color.FromArgb(150, 255, 255, 255);
+                }
+                
+                g.DrawLines(centerPen, wPoints);
+            }
         }
 
         var hIcon = bmp.GetHicon();
