@@ -1,4 +1,0 @@
-﻿orchids.app=76.76.21.21
-slelguoygbfzlpylpxfs.supabase.co=172.64.149.246
-slelguoygbfzlpylpxfs.supabase.co=104.18.38.10
-posthog.com=216.150.1.1

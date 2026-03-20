@@ -623,9 +623,10 @@ public sealed class SingBoxConfigFactoryV2
                 ? string.Empty
                 : settings.TunInterfaceName!.Trim();
 
-            var hasBypassProcesses = settings.BypassTunProcesses?
-                .Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Any(x => !string.IsNullOrWhiteSpace(x)) == true;
+            // 当用户自定义规则中存在 ProcessName + Direct 规则时，关闭 strict_route，
+            // 使 OS 路由表不会强制所有流量经过 TUN，从而让 direct 出站真正走物理网卡。
+            var hasProcessDirectRules = settings.UserRules?
+                .Any(r => r.Enabled && r.Type == RuleType.ProcessName && r.Action == RuleAction.Direct) == true;
 
             list.Add(new
             {
@@ -635,7 +636,7 @@ public sealed class SingBoxConfigFactoryV2
                 address = new[] { "172.19.0.1/30" },
                 mtu = 1500,
                 auto_route = true,
-                strict_route = !hasBypassProcesses,
+                strict_route = !hasProcessDirectRules,
                 route_exclude_address = BuildTunRouteExcludeAddress(selected),
                 stack = "system",
                 sniff = true,

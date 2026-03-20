@@ -19,12 +19,63 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         SetWindowIcon();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.OldValue is INotifyPropertyChanged oldVm)
+            oldVm.PropertyChanged -= OnViewModelPropertyChanged;
+        if (e.NewValue is INotifyPropertyChanged newVm)
+            newVm.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainViewModel.LogsText)) return;
+        if (sender is not MainViewModel vm) return;
+
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => OnViewModelPropertyChanged(sender, e));
+            return;
+        }
+
+        var tb = LogTextBox;
+        if (tb.SelectionLength > 0)
+        {
+            // 用户正在选择文本，暂不更新以保留选中状态
+            return;
+        }
+
+        var newText = vm.LogsText;
+        if (tb.Text == newText) return;
+
+        tb.Text = newText;
+        tb.ScrollToEnd();
+    }
+
+    private void CopyAllLogs_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(LogTextBox.Text))
+                System.Windows.Clipboard.SetText(LogTextBox.Text);
+        }
+        catch { /* Clipboard may be locked */ }
     }
 
     protected override void OnClosing(CancelEventArgs e)
     {
         e.Cancel = true;
         Hide();
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        if (DataContext is INotifyPropertyChanged vm)
+            vm.PropertyChanged -= OnViewModelPropertyChanged;
+        base.OnClosed(e);
     }
 
     private void NodeDataGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)

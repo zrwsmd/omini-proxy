@@ -12,6 +12,77 @@
         PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
         <converters:StatusColorConverter x:Key="StatusColorConverter" />
+
+        <!-- 现代扁平风格 TabControl -->
+        <Style x:Key="ModernTabControl" TargetType="TabControl">
+            <Setter Property="Background" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <!-- Tab 头部栏 -->
+                            <Border Grid.Row="0" Background="#FAFAFA" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
+                                <TabPanel IsItemsHost="True" Margin="8,0,0,0" />
+                            </Border>
+                            <!-- 内容区 -->
+                            <Border Grid.Row="1" Background="White">
+                                <ContentPresenter ContentSource="SelectedContent" Margin="0" />
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 现代扁平风格 TabItem -->
+        <Style x:Key="ModernTabItem" TargetType="TabItem">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#6B7280" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="Transparent"
+                                Padding="14,10,14,10"
+                                Margin="0,0,2,0"
+                                BorderThickness="0,0,0,2"
+                                BorderBrush="Transparent"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter x:Name="ContentSite"
+                                              ContentSource="Header"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              TextBlock.FontWeight="Normal" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="#3B82F6" />
+                                <Setter TargetName="TabBorder" Property="Background" Value="White" />
+                                <Setter Property="Foreground" Value="#1D4ED8" />
+                                <Setter TargetName="ContentSite" Property="TextBlock.FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsSelected" Value="False" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="TabBorder" Property="Background" Value="#F3F4F6" />
+                                <Setter Property="Foreground" Value="#374151" />
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="#D1D5DB" />
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Grid>
         <Grid.RowDefinitions>
@@ -51,9 +122,10 @@
         </Border>
 
         <!-- 主内容区 -->
-        <TabControl Grid.Row="1" Margin="12" SelectedIndex="{Binding MainTabSelectedIndex}">
+        <TabControl Grid.Row="1" Margin="0" SelectedIndex="{Binding MainTabSelectedIndex}" 
+                    Style="{StaticResource ModernTabControl}" ItemContainerStyle="{StaticResource ModernTabItem}">
             <TabItem Header="仪表盘">
-                <Grid Margin="0,12,0,0">
+                <Grid Margin="12,12,12,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="200" />
@@ -322,13 +394,23 @@
                         </StackPanel>
                         
                         <GroupBox Header="运行日志" Grid.Row="1" Margin="0,12,0,0">
-                            <TextBox Text="{Binding LogsText, Mode=OneWay}" 
+                            <TextBox x:Name="LogTextBox"
                                      IsReadOnly="True" 
                                      VerticalScrollBarVisibility="Auto" 
                                      TextWrapping="Wrap" 
                                      FontFamily="Consolas" 
                                      FontSize="11" 
-                                     BorderThickness="0" />
+                                     BorderThickness="0"
+                                     IsUndoEnabled="False">
+                                <TextBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="复制选中" Command="ApplicationCommands.Copy" />
+                                        <MenuItem Header="全选" Command="ApplicationCommands.SelectAll" />
+                                        <Separator />
+                                        <MenuItem Header="复制全部日志" Click="CopyAllLogs_Click" />
+                                    </ContextMenu>
+                                </TextBox.ContextMenu>
+                            </TextBox>
                         </GroupBox>
                     </Grid>
                 </Grid>
@@ -421,7 +503,8 @@
                         <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#DDD" />
 
                         <!-- 详情面板 -->
-                        <TabControl Grid.Column="2" Margin="4,0,0,0">
+                        <TabControl Grid.Column="2" Margin="4,0,0,0"
+                                    Style="{StaticResource ModernTabControl}" ItemContainerStyle="{StaticResource ModernTabItem}">
                             <TabItem Header="Request">
                                 <Grid>
                                     <Grid.RowDefinitions>
