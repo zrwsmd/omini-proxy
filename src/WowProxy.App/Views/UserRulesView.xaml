@@ -10,6 +10,8 @@
              d:DesignHeight="600" d:DesignWidth="900">
     <UserControl.Resources>
         <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter" />
+        <converters:RuleTypeDisplayConverter x:Key="RuleTypeDisplayConverter" />
+        <converters:RuleActionDisplayConverter x:Key="RuleActionDisplayConverter" />
         <ObjectDataProvider x:Key="RuleTypeEnum" MethodName="GetValues" ObjectType="{x:Type domain:RuleType}">
             <ObjectDataProvider.MethodParameters>
                 <x:Type TypeName="domain:RuleType" />
@@ -58,7 +60,13 @@
                     </Grid.ColumnDefinitions>
 
                     <ComboBox Grid.Column="0" ItemsSource="{Binding Source={StaticResource RuleTypeEnum}}" 
-                              SelectedItem="{Binding NewType}" Margin="0,0,8,0" />
+                              SelectedItem="{Binding NewType}" Margin="0,0,8,0">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource RuleTypeDisplayConverter}}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
 
                     <TextBox Grid.Column="1" Text="{Binding NewValue, UpdateSourceTrigger=PropertyChanged}" 
                              Margin="0,0,8,0" VerticalContentAlignment="Center">
@@ -78,7 +86,13 @@
                     </TextBox>
 
                     <ComboBox Grid.Column="2" ItemsSource="{Binding Source={StaticResource RuleActionEnum}}" 
-                              SelectedItem="{Binding NewAction}" Margin="0,0,8,0" />
+                              SelectedItem="{Binding NewAction}" Margin="0,0,8,0">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource RuleActionDisplayConverter}}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
 
                     <TextBox Grid.Column="3" Text="{Binding NewRemark, UpdateSourceTrigger=PropertyChanged}" 
                              Margin="0,0,8,0" VerticalContentAlignment="Center">

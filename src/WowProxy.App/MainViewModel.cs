@@ -116,7 +116,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _settingsViewModel = new SettingsViewModel(this, settings);
         _chainProxy = new ChainProxyViewModel(this, settings.EnableChainProxy, settings.ChainProxyNodeIds?.ToList());
         _mitmCapture = new MitmCaptureViewModel();
-        _userRules = new UserRulesViewModel(settings.UserRules);
+        _userRules = new UserRulesViewModel(settings.UserRules, () => _ = PersistSelectionAsync());
         
         // 初始化节点健康监控
         _healthMonitor = new Services.NodeHealthMonitor(
@@ -713,7 +713,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             EnableDirectCn: EnableDirectCn,
             EnableTun: EnableTun,
             TunInterfaceName: null,
-            BypassTunProcesses: _settingsViewModel.BypassTunProcesses,
+            BypassTunProcesses: null,
             SubscriptionGroups: _subscriptionGroups.ToList(),
             EnableChainProxy: _chainProxy.EnableChainProxy,
             ChainProxyNodeIds: _chainProxy.GetChainNodeIds()
@@ -1285,7 +1285,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 EnableDirectCn = EnableDirectCn,
                 EnableTun = EnableTun,
                 EnableSystemProxy = EnableSystemProxy,
-                BypassTunProcesses = _settingsViewModel.BypassTunProcesses,
+                BypassTunProcesses = null,
                 SubscriptionGroups = _subscriptionGroups.ToList(),
                 EnableChainProxy = _chainProxy.EnableChainProxy,
                 ChainProxyNodeIds = _chainProxy.GetChainNodeIds(),

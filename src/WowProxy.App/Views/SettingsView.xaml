@@ -18,7 +18,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -40,9 +39,6 @@
                 </ComboBox>
 
                 <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Content="国内直连 (GeoSite/GeoIP)" IsChecked="{Binding EnableDirectCn}" />
-                
-                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Top" Margin="0,8,8,0" Text="TUN直连进程" ToolTip="仅针对 TUN 模式生效，每行一个进程名，如 orchids.exe" />
-                <TextBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Height="60" Margin="0,8,0,8" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Text="{Binding BypassTunProcesses, UpdateSourceTrigger=PropertyChanged}" ToolTip="每行一个进程名（如 orchids.exe）。&#10;这些进程被 TUN 捕获的流量将直连，不走代理。&#10;同时勾选【系统代理】后，进程的 HTTP 请求仍可走代理翻墙。&#10;修改后需重新点击「连接」生效。" />
             </Grid>
         </GroupBox>
 

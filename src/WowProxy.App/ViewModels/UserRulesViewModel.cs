@@ -18,14 +18,17 @@ public class UserRulesViewModel : INotifyPropertyChanged
     private string _newRemark = string.Empty;
     private string _validationError = string.Empty;
     private UserRuleModel? _selectedRule;
+    private readonly Action? _onRulesChanged;
 
-    public UserRulesViewModel(List<UserRule>? initialRules = null)
+    public UserRulesViewModel(List<UserRule>? initialRules = null, Action? onRulesChanged = null)
     {
+        _onRulesChanged = onRulesChanged;
+        
         if (initialRules != null)
         {
             foreach (var rule in initialRules)
             {
-                _rules.Add(new UserRuleModel(rule));
+                _rules.Add(new UserRuleModel(rule, onRulesChanged));
             }
         }
 
@@ -62,6 +65,7 @@ public class UserRulesViewModel : INotifyPropertyChanged
                 _newValue = value;
                 OnPropertyChanged();
                 ValidateNewValue();
+                AddRuleCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -101,6 +105,7 @@ public class UserRulesViewModel : INotifyPropertyChanged
             {
                 _validationError = value;
                 OnPropertyChanged();
+                AddRuleCommand.RaiseCanExecuteChanged();
             }
         }
     }
@@ -148,12 +153,14 @@ public class UserRulesViewModel : INotifyPropertyChanged
 
         var rule = UserRule.Create(NewType, NewValue.Trim(), NewAction, 
             string.IsNullOrWhiteSpace(NewRemark) ? null : NewRemark.Trim());
-        _rules.Add(new UserRuleModel(rule));
+        _rules.Add(new UserRuleModel(rule, _onRulesChanged));
 
         // Clear form
         NewValue = string.Empty;
         NewRemark = string.Empty;
         ValidationError = string.Empty;
+        
+        _onRulesChanged?.Invoke();
     }
 
     private void DeleteRule()
@@ -162,6 +169,7 @@ public class UserRulesViewModel : INotifyPropertyChanged
         {
             _rules.Remove(SelectedRule);
             SelectedRule = null;
+            _onRulesChanged?.Invoke();
         }
     }
 
@@ -172,6 +180,7 @@ public class UserRulesViewModel : INotifyPropertyChanged
         if (index > 0)
         {
             _rules.Move(index, index - 1);
+            _onRulesChanged?.Invoke();
         }
     }
 
@@ -182,6 +191,7 @@ public class UserRulesViewModel : INotifyPropertyChanged
         if (index >= 0 && index < _rules.Count - 1)
         {
             _rules.Move(index, index + 1);
+            _onRulesChanged?.Invoke();
         }
     }
 

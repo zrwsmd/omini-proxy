@@ -7,11 +7,13 @@ namespace WowProxy.App.Models;
 public class UserRuleModel : INotifyPropertyChanged
 {
     private bool _enabled;
+    private readonly Action? _onChanged;
 
-    public UserRuleModel(UserRule rule)
+    public UserRuleModel(UserRule rule, Action? onChanged = null)
     {
         Rule = rule;
         _enabled = rule.Enabled;
+        _onChanged = onChanged;
     }
 
     public UserRule Rule { get; private set; }
@@ -32,6 +34,7 @@ public class UserRuleModel : INotifyPropertyChanged
                 _enabled = value;
                 Rule = Rule with { Enabled = value };
                 OnPropertyChanged();
+                _onChanged?.Invoke();
             }
         }
     }
