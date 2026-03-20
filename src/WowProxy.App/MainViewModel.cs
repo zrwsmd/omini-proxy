@@ -106,6 +106,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CopyNodeLinkCommand = new RelayCommand(_ => CopyNodeLink());
         SetGroupCommand = new RelayCommand(_ => SetGroupForSelectedNodes());
         CreateGroupCommand = new RelayCommand(_ => CreateNewGroup());
+        RenameGroupCommand = new RelayCommand(p => RenameGroup(p as string));
+        DeleteGroupCommand = new RelayCommand(p => DeleteGroup(p as string));
 
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
@@ -132,6 +134,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public RelayCommand CopyNodeLinkCommand { get; }
     public RelayCommand SetGroupCommand { get; }
     public RelayCommand CreateGroupCommand { get; }
+    public RelayCommand RenameGroupCommand { get; }
+    public RelayCommand DeleteGroupCommand { get; }
 
     public string? SingBoxPath => _settingsViewModel.SingBoxPath;
     public bool EnableClashApi => _settingsViewModel.EnableClashApi;
@@ -361,6 +365,91 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
+
+    private void RenameGroup(string? groupName)
+    {
+        if (string.IsNullOrWhiteSpace(groupName) || groupName == "全部") return;
+
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            var dialog = new Views.PromptWindow("重命名分组", $"请输入分组“{groupName}”内的新名称:", groupName);
+            if (System.Windows.Application.Current.MainWindow != null)
+                dialog.Owner = System.Windows.Application.Current.MainWindow;
+
+            if (dialog.ShowDialog() == true)
+            {
+                var newName = dialog.InputText.Trim();
+                if (string.IsNullOrEmpty(newName) || string.Equals(newName, groupName, StringComparison.OrdinalIgnoreCase)) return;
+
+                // 1. Update subscription groups
+                var subEntry = _subscriptionGroups.FirstOrDefault(g => string.Equals(g.GroupName, groupName, StringComparison.OrdinalIgnoreCase));
+                if (subEntry != null)
+                {
+                    _subscriptionGroups.Remove(subEntry);
+                    _subscriptionGroups.Add(subEntry with { GroupName = newName });
+                }
+
+                // 2. Update all nodes with this group name
+                foreach (var proxyNode in _nodes.Where(n => string.Equals(n.Node.SubscriptionGroup, groupName, StringComparison.OrdinalIgnoreCase)).ToList())
+                {
+                    proxyNode.Node = proxyNode.Node with { SubscriptionGroup = newName };
+                }
+
+                bool wasSelected = string.Equals(SelectedGroup, groupName, StringComparison.OrdinalIgnoreCase);
+
+                RebuildNodeGroups();
+
+                if (wasSelected) SelectedGroup = newName;
+                else RebuildFilteredNodes();
+
+                _ = PersistSelectionAsync();
+            }
+        });
+    }
+
+    private void DeleteGroup(string? groupName)
+    {
+        if (string.IsNullOrWhiteSpace(groupName) || groupName == "全部") return;
+
+        var result = System.Windows.MessageBox.Show(
+            $"确定要删除分组“{groupName}”及其包含的所有节点吗？\n(注意: 节点及关联信息将被彻底移除)", 
+            "删除分组确认", 
+            System.Windows.MessageBoxButton.YesNo, 
+            System.Windows.MessageBoxImage.Warning);
+            
+        if (result == System.Windows.MessageBoxResult.Yes)
+        {
+            // 1. Remove subscription mapping
+            var subEntry = _subscriptionGroups.FirstOrDefault(g => string.Equals(g.GroupName, groupName, StringComparison.OrdinalIgnoreCase));
+            if (subEntry != null)
+            {
+                _subscriptionGroups.Remove(subEntry);
+            }
+
+            // 2. Remove associated nodes
+            var nodesToRemove = _nodes.Where(n => string.Equals(n.Node.SubscriptionGroup, groupName, StringComparison.OrdinalIgnoreCase)).ToList();
+            foreach (var node in nodesToRemove)
+            {
+                _nodes.Remove(node);
+                if (node.IsActive)
+                {
+                    ActiveNode = null;
+                }
+            }
+
+            RebuildNodeGroups();
+            if (string.Equals(SelectedGroup, groupName, StringComparison.OrdinalIgnoreCase))
+            {
+                SelectedGroup = "全部";
+            }
+            else
+            {
+                RebuildFilteredNodes();
+            }
+            
+            _ = PersistSelectionAsync();
+        }
+    }
 
     private void CreateNewGroup()
     {
