@@ -464,6 +464,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 }
                 
                 _ = PersistSelectionAsync();
+                
+                // Show status feedback
+                StatusText = nodesCount > 0 
+                    ? $"已删除分组 \"{groupName}\" 及其 {nodesCount} 个节点"
+                    : $"已删除分组 \"{groupName}\"";
             }
         });
     }
