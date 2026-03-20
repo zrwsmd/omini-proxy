@@ -395,13 +395,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         
         System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            var dialog = new Views.PromptWindow("设置分组", "请输入自定义的分组名称（留空表示不分组）:", currentGroup);
+            // Collect all custom/subscription groups, exclude the special "全部" tab
+            var availableGroups = _nodeGroups.Where(g => g != "全部").ToList();
+
+            var dialog = new Views.SelectGroupWindow(availableGroups, currentGroup);
             if (System.Windows.Application.Current.MainWindow != null)
                 dialog.Owner = System.Windows.Application.Current.MainWindow;
 
             if (dialog.ShowDialog() == true)
             {
-                var newGroup = dialog.InputText.Trim();
+                var newGroup = dialog.SelectedGroup.Trim();
                 // Ensure null rather than empty string for consistency
                 if (string.IsNullOrEmpty(newGroup)) newGroup = null;
 
