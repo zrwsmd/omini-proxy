@@ -217,6 +217,8 @@
                                     <MenuItem Header="设为活动服务器" Command="{Binding SetActiveNodeCommand}" />
                                     <MenuItem Header="复制分享链接" Command="{Binding CopyNodeLinkCommand}" />
                                     <Separator />
+                                    <MenuItem Header="更改分组..." Command="{Binding SetGroupCommand}" />
+                                    <Separator />
                                     <MenuItem Header="测试真延迟 (全部)" Command="{Binding TestLatencyCommand}" />
                                     <MenuItem Header="测试速度 (全部)" Command="{Binding TestSpeedCommand}" />
                                     <Separator />

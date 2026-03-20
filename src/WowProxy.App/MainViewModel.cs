@@ -104,6 +104,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         TestLatencyCommand = new AsyncRelayCommand(_ => TestLatencyAsync());
         TestSpeedCommand = new AsyncRelayCommand(_ => TestSpeedAsync());
         CopyNodeLinkCommand = new RelayCommand(_ => CopyNodeLink());
+        SetGroupCommand = new RelayCommand(_ => SetGroupForSelectedNodes());
 
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
@@ -128,6 +129,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public AsyncRelayCommand TestLatencyCommand { get; }
     public AsyncRelayCommand TestSpeedCommand { get; }
     public RelayCommand CopyNodeLinkCommand { get; }
+    public RelayCommand SetGroupCommand { get; }
 
     public string? SingBoxPath => _settingsViewModel.SingBoxPath;
     public bool EnableClashApi => _settingsViewModel.EnableClashApi;
@@ -357,6 +359,37 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
+
+    private void SetGroupForSelectedNodes()
+    {
+        if (_selectedNodes.Count == 0) return;
+
+        var currentGroup = _selectedNodes.First().Node.SubscriptionGroup ?? "";
+        
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
+        {
+            var dialog = new Views.PromptWindow("设置分组", "请输入自定义的分组名称（留空表示不分组）:", currentGroup);
+            if (System.Windows.Application.Current.MainWindow != null)
+                dialog.Owner = System.Windows.Application.Current.MainWindow;
+
+            if (dialog.ShowDialog() == true)
+            {
+                var newGroup = dialog.InputText.Trim();
+                // Ensure null rather than empty string for consistency
+                if (string.IsNullOrEmpty(newGroup)) newGroup = null;
+
+                foreach (var proxyNode in _selectedNodes.ToList())
+                {
+                    proxyNode.Node = proxyNode.Node with { SubscriptionGroup = newGroup };
+                }
+
+                // Since we mutated the nodes, rebuild the group tabs and filtered list and save
+                RebuildNodeGroups();
+                RebuildFilteredNodes();
+                _ = PersistSelectionAsync();
+            }
+        });
+    }
 
     private async Task StartAsync()
     {

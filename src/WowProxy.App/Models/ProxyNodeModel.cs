@@ -10,12 +10,22 @@ public class ProxyNodeModel : INotifyPropertyChanged
     private double? _speed;
     private bool _isActive;
 
+    private ProxyNode _node;
+
     public ProxyNodeModel(ProxyNode node)
     {
-        Node = node;
+        _node = node;
     }
 
-    public ProxyNode Node { get; }
+    public ProxyNode Node
+    {
+        get => _node;
+        set
+        {
+            _node = value;
+            OnPropertyChanged(null); // Notify that all properties from Node might have changed
+        }
+    }
 
     // Expose Node properties for DataGrid binding
     public string Id => Node.Id;
