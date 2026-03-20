@@ -341,23 +341,29 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void RebuildNodeGroups()
     {
-        // Rebuild _nodeGroups from current subscription groups
-        var groups = _nodes
+        // Collect groups from both nodes and subscription groups (to keep empty groups)
+        var nodeGroups = _nodes
             .Select(n => n.Node.SubscriptionGroup)
             .Where(g => !string.IsNullOrWhiteSpace(g))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        var subscriptionGroupNames = _subscriptionGroups
+            .Select(s => s.GroupName)
+            .Where(g => !string.IsNullOrWhiteSpace(g));
+
+        var allGroups = nodeGroups.Union(subscriptionGroupNames, StringComparer.OrdinalIgnoreCase)
             .OrderBy(g => g)
             .ToList();
 
-        // Remove tabs that no longer exist (except "全部")
+        // Remove tabs that no longer exist in either nodes or subscription groups (except "全部")
         for (var i = _nodeGroups.Count - 1; i >= 1; i--)
         {
-            if (!groups.Contains(_nodeGroups[i], StringComparer.OrdinalIgnoreCase))
+            if (!allGroups.Contains(_nodeGroups[i], StringComparer.OrdinalIgnoreCase))
                 _nodeGroups.RemoveAt(i);
         }
 
         // Add new tabs
-        foreach (var g in groups)
+        foreach (var g in allGroups)
         {
             if (!_nodeGroups.Contains(g!, StringComparer.OrdinalIgnoreCase))
                 _nodeGroups.Add(g!);
@@ -411,44 +417,55 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(groupName) || groupName == "全部") return;
 
-        var result = System.Windows.MessageBox.Show(
-            $"确定要删除分组“{groupName}”及其包含的所有节点吗？\n(注意: 节点及关联信息将被彻底移除)", 
-            "删除分组确认", 
-            System.Windows.MessageBoxButton.YesNo, 
-            System.Windows.MessageBoxImage.Warning);
-            
-        if (result == System.Windows.MessageBoxResult.Yes)
+        System.Windows.Application.Current.Dispatcher.Invoke(() =>
         {
-            // 1. Remove subscription mapping
-            var subEntry = _subscriptionGroups.FirstOrDefault(g => string.Equals(g.GroupName, groupName, StringComparison.OrdinalIgnoreCase));
-            if (subEntry != null)
-            {
-                _subscriptionGroups.Remove(subEntry);
-            }
+            var nodesCount = _nodes.Count(n => string.Equals(n.Node.SubscriptionGroup, groupName, StringComparison.OrdinalIgnoreCase));
+            var message = nodesCount > 0
+                ? $"确定要删除分组 \"{groupName}\" 及其包含的 {nodesCount} 个节点吗？\n\n⚠️ 注意：节点及关联信息将被彻底移除，此操作不可撤销。"
+                : $"确定要删除空分组 \"{groupName}\" 吗？";
 
-            // 2. Remove associated nodes
-            var nodesToRemove = _nodes.Where(n => string.Equals(n.Node.SubscriptionGroup, groupName, StringComparison.OrdinalIgnoreCase)).ToList();
-            foreach (var node in nodesToRemove)
-            {
-                _nodes.Remove(node);
-                if (node.IsActive)
-                {
-                    ActiveNode = null;
-                }
-            }
-
-            RebuildNodeGroups();
-            if (string.Equals(SelectedGroup, groupName, StringComparison.OrdinalIgnoreCase))
-            {
-                SelectedGroup = "全部";
-            }
-            else
-            {
-                RebuildFilteredNodes();
-            }
+            var dialog = new Views.ConfirmWindow(
+                "⚠️ 删除分组确认",
+                message,
+                "删除",
+                isDangerous: true);
             
-            _ = PersistSelectionAsync();
-        }
+            if (System.Windows.Application.Current.MainWindow != null)
+                dialog.Owner = System.Windows.Application.Current.MainWindow;
+
+            if (dialog.ShowDialog() == true && dialog.IsConfirmed)
+            {
+                // 1. Remove subscription mapping
+                var subEntry = _subscriptionGroups.FirstOrDefault(g => string.Equals(g.GroupName, groupName, StringComparison.OrdinalIgnoreCase));
+                if (subEntry != null)
+                {
+                    _subscriptionGroups.Remove(subEntry);
+                }
+
+                // 2. Remove associated nodes
+                var nodesToRemove = _nodes.Where(n => string.Equals(n.Node.SubscriptionGroup, groupName, StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var node in nodesToRemove)
+                {
+                    _nodes.Remove(node);
+                    if (node.IsActive)
+                    {
+                        ActiveNode = null;
+                    }
+                }
+
+                RebuildNodeGroups();
+                if (string.Equals(SelectedGroup, groupName, StringComparison.OrdinalIgnoreCase))
+                {
+                    SelectedGroup = "全部";
+                }
+                else
+                {
+                    RebuildFilteredNodes();
+                }
+                
+                _ = PersistSelectionAsync();
+            }
+        });
     }
 
     private void CreateNewGroup()
@@ -464,14 +481,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 var newGroup = dialog.InputText.Trim();
                 if (string.IsNullOrEmpty(newGroup)) return;
 
-                // Use an empty URL to mark it as a manual group
-                if (!_subscriptionGroups.Any(g => string.Equals(g.GroupName, newGroup, StringComparison.OrdinalIgnoreCase)))
+                if (newGroup == "全部")
                 {
-                    _subscriptionGroups.Add(new SubscriptionEntry(newGroup, ""));
-                    RebuildNodeGroups();
-                    SelectedGroup = newGroup;
-                    _ = PersistSelectionAsync();
+                    StatusText = "分组名称不能为 \"全部\"";
+                    return;
                 }
+
+                // Check if group already exists
+                if (_subscriptionGroups.Any(g => string.Equals(g.GroupName, newGroup, StringComparison.OrdinalIgnoreCase)))
+                {
+                    StatusText = $"分组 \"{newGroup}\" 已存在";
+                    return;
+                }
+
+                // Add to subscription groups and immediately add to NodeGroups for display
+                _subscriptionGroups.Add(new SubscriptionEntry(newGroup, ""));
+                
+                // Immediately add to NodeGroups if not already present
+                if (!_nodeGroups.Contains(newGroup, StringComparer.OrdinalIgnoreCase))
+                {
+                    _nodeGroups.Add(newGroup);
+                }
+                
+                // Switch to the new group
+                SelectedGroup = newGroup;
+                _ = PersistSelectionAsync();
+                StatusText = $"已创建分组 \"{newGroup}\"";
             }
         });
     }
