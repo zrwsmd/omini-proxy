@@ -43,4 +43,12 @@ public partial class PromptWindow : Window
             CancelButton_Click(sender, e);
         }
     }
+
+    private void TopBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == System.Windows.Input.MouseButton.Left)
+        {
+            this.DragMove();
+        }
+    }
 }
