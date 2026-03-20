@@ -28,6 +28,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly object _gate = new();
     private readonly SemaphoreSlim _coreLock = new(1, 1);
     private int _logsUpdateScheduled;
+    private System.Threading.Timer? _statusRestoreTimer;
 
     private AppSettings _settings;
     private SingBoxCoreAdapter? _core;
@@ -283,7 +284,43 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (_statusText == value) return;
             _statusText = value;
             OnPropertyChanged();
+            
+            // Auto-restore status text after temporary messages
+            if (ShouldAutoRestoreStatus(value))
+            {
+                _statusRestoreTimer?.Dispose();
+                _statusRestoreTimer = new System.Threading.Timer(_ =>
+                {
+                    System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+                    {
+                        UpdateStatusFromCoreState();
+                    });
+                }, null, TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
+            }
         }
+    }
+
+    private bool ShouldAutoRestoreStatus(string statusText)
+    {
+        // Auto-restore for temporary operation messages
+        return statusText.Contains("已创建分组") ||
+               statusText.Contains("已删除分组") ||
+               statusText.Contains("已导入节点") ||
+               statusText.Contains("节点已移除") ||
+               statusText.Contains("已移除");
+    }
+
+    private void UpdateStatusFromCoreState()
+    {
+        _statusText = _coreState switch
+        {
+            CoreState.Running => "运行中",
+            CoreState.Starting => "正在启动...",
+            CoreState.Stopping => "正在停止...",
+            CoreState.Faulted => "启动失败",
+            _ => "已停止"
+        };
+        OnPropertyChanged(nameof(StatusText));
     }
 
     public string ConnectButtonText
@@ -321,6 +358,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _statusRestoreTimer?.Dispose();
         _dashboard.Dispose();
         await StopAsync();
         _systemProxy.RestoreFromSnapshotIfAny();
@@ -963,14 +1001,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         var (nodes, errors, isClash) = NodeImport.ParseText(text);
 
-        // If the imported content is Clash YAML (including base64-encoded YAML), auto-assign a group.
+        // Assign nodes to current selected group or create a new group for Clash imports
         string? importGroupName = null;
-        if (nodes.Count > 0 && isClash)
+        if (nodes.Count > 0)
         {
-            // Check if there's already a subscription entry for this exact text hash; use idx-based name
-            var idx = _subscriptionGroups.Count + 1;
-            importGroupName = $"导入{idx}";
-            nodes = nodes.Select(n => n with { SubscriptionGroup = importGroupName }).ToList();
+            if (isClash)
+            {
+                // For Clash YAML imports, create a new group
+                var idx = _subscriptionGroups.Count + 1;
+                importGroupName = $"导入{idx}";
+                nodes = nodes.Select(n => n with { SubscriptionGroup = importGroupName }).ToList();
+            }
+            else if (_selectedGroup != "全部" && !string.IsNullOrWhiteSpace(_selectedGroup))
+            {
+                // For individual node links, import to current selected group
+                nodes = nodes.Select(n => n with { SubscriptionGroup = _selectedGroup }).ToList();
+            }
         }
 
         var merged = _nodes.Select(m => m.Node).ToList();

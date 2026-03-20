@@ -8,7 +8,8 @@
         xmlns:controls="clr-namespace:WowProxy.App.Controls"
         xmlns:converters="clr-namespace:WowProxy.App.Converters"
         mc:Ignorable="d"
-        Title="WowProxy" Height="600" Width="1000">
+        Title="WowProxy" Height="600" Width="1000"
+        PreviewKeyDown="Window_PreviewKeyDown">
     <Window.Resources>
         <converters:StatusColorConverter x:Key="StatusColorConverter" />
     </Window.Resources>
