@@ -37,6 +37,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private SettingsViewModel _settingsViewModel;
     private ChainProxyViewModel _chainProxy;
     private MitmCaptureViewModel _mitmCapture;
+    private UserRulesViewModel _userRules;
+    private Services.NodeHealthMonitor? _healthMonitor;
 
     private bool _enableSystemProxy;
     private string _statusText;
@@ -114,6 +116,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _settingsViewModel = new SettingsViewModel(this, settings);
         _chainProxy = new ChainProxyViewModel(this, settings.EnableChainProxy, settings.ChainProxyNodeIds?.ToList());
         _mitmCapture = new MitmCaptureViewModel();
+        _userRules = new UserRulesViewModel(settings.UserRules);
+        
+        // 初始化节点健康监控
+        _healthMonitor = new Services.NodeHealthMonitor(
+            getCurrentNode: () => ActiveNode,
+            getAvailableNodes: () => _filteredNodes.ToList(),
+            switchToNode: async (node) => await SwitchToNodeAsync(node),
+            logMessage: (msg) => AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, msg))
+        );
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -122,6 +133,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public SettingsViewModel Settings => _settingsViewModel;
     public ChainProxyViewModel ChainProxy => _chainProxy;
     public MitmCaptureViewModel MitmCapture => _mitmCapture;
+    public UserRulesViewModel UserRules => _userRules;
 
     public AsyncRelayCommand ConnectCommand { get; }
     public AsyncRelayCommand UpdateSubscriptionCommand { get; }
@@ -359,9 +371,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _statusRestoreTimer?.Dispose();
+        _healthMonitor?.Dispose();
         _dashboard.Dispose();
         await StopAsync();
         _systemProxy.RestoreFromSnapshotIfAny();
+    }
+
+    /// <summary>
+    /// 切换到指定节点（用于自动故障转移）
+    /// </summary>
+    private async Task SwitchToNodeAsync(ProxyNodeModel node)
+    {
+        if (node == null || node == ActiveNode) return;
+
+        ActiveNode = node;
+        
+        // 如果代理正在运行，重启以应用新节点
+        if (_coreState == CoreState.Running)
+        {
+            await StopAsync();
+            await Task.Delay(1000);
+            await StartAsync();
+        }
     }
 
     // ── Group helpers ─────────────────────────────────────────────────────────
@@ -755,6 +786,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 }
 
                 StatusText = "运行中";
+                
+                // 启动节点健康监控
+                if (_healthMonitor != null && _nodes.Count > 1)
+                {
+                    _healthMonitor.IsEnabled = true;
+                }
+                
                 await RunSelfTestAsync(mixedPort);
                 return;
             }
@@ -1251,6 +1289,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 SubscriptionGroups = _subscriptionGroups.ToList(),
                 EnableChainProxy = _chainProxy.EnableChainProxy,
                 ChainProxyNodeIds = _chainProxy.GetChainNodeIds(),
+                UserRules = _userRules.GetRules(),
             };
             await _settingsStore.SaveAsync(_settings);
         }
@@ -1303,6 +1342,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         await _coreLock.WaitAsync();
         try
         {
+            // 停止节点健康监控
+            if (_healthMonitor != null)
+            {
+                _healthMonitor.IsEnabled = false;
+            }
+            
             // Always restore system proxy regardless of current EnableSystemProxy state,
             // because the user may have toggled it off after connecting.
             _systemProxy.RestoreFromSnapshotIfAny();

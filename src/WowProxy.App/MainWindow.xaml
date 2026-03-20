@@ -592,6 +592,10 @@
                 </Grid>
             </TabItem>
 
+            <TabItem Header="规则">
+                <views:UserRulesView DataContext="{Binding UserRules}" />
+            </TabItem>
+
             <TabItem Header="设置">
                 <views:SettingsView DataContext="{Binding Settings}" />
             </TabItem>

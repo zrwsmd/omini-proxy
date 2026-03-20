@@ -39,6 +39,11 @@ public sealed class SingBoxConfigFactoryV2
                 type = "direct",
                 tag = "direct",
             },
+            new
+            {
+                type = "block",
+                tag = "block",
+            },
         };
 
         if (chainNodes.Count >= 2)
@@ -128,10 +133,16 @@ public sealed class SingBoxConfigFactoryV2
             }
 
             var bypassRules = BuildBypassTunRules(settings);
-            if (bypassRules.Length > 0)
+            var userRules = BuildUserRules(settings);
+            
+            if (bypassRules.Length > 0 || userRules.Length > 0)
             {
                 var allRules = route.ContainsKey("rules") ? ((object[])route["rules"]!).ToList() : new List<object>();
-                allRules.InsertRange(0, bypassRules);
+                // 用户规则优先级最高，插入到最前面
+                if (userRules.Length > 0)
+                    allRules.InsertRange(0, userRules);
+                if (bypassRules.Length > 0)
+                    allRules.InsertRange(userRules.Length, bypassRules);
                 route["rules"] = allRules.ToArray();
             }
 
@@ -187,10 +198,16 @@ public sealed class SingBoxConfigFactoryV2
         }
 
         var bypassRules2 = BuildBypassTunRules(settings);
-        if (bypassRules2.Length > 0)
+        var userRules2 = BuildUserRules(settings);
+        
+        if (bypassRules2.Length > 0 || userRules2.Length > 0)
         {
             var allRules = cnRoute.ContainsKey("rules") ? ((object[])cnRoute["rules"]!).ToList() : new List<object>();
-            allRules.InsertRange(0, bypassRules2);
+            // 用户规则优先级最高，插入到最前面
+            if (userRules2.Length > 0)
+                allRules.InsertRange(0, userRules2);
+            if (bypassRules2.Length > 0)
+                allRules.InsertRange(userRules2.Length, bypassRules2);
             cnRoute["rules"] = allRules.ToArray();
         }
 
@@ -680,5 +697,67 @@ public sealed class SingBoxConfigFactoryV2
         }
 
         return list.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    /// <summary>
+    /// 构建用户自定义路由规则
+    /// </summary>
+    private static object[] BuildUserRules(AppSettings settings)
+    {
+        var userRules = settings.UserRules;
+        if (userRules == null || userRules.Count == 0)
+            return Array.Empty<object>();
+
+        var rules = new List<object>();
+        foreach (var rule in userRules.Where(r => r.Enabled))
+        {
+            var ruleObj = new Dictionary<string, object>();
+
+            // 添加匹配条件
+            switch (rule.Type)
+            {
+                case RuleType.DomainSuffix:
+                    ruleObj["domain_suffix"] = new[] { rule.Value };
+                    break;
+                case RuleType.Domain:
+                    ruleObj["domain"] = new[] { rule.Value };
+                    break;
+                case RuleType.DomainKeyword:
+                    ruleObj["domain_keyword"] = new[] { rule.Value };
+                    break;
+                case RuleType.IpCidr:
+                    ruleObj["ip_cidr"] = new[] { rule.Value };
+                    break;
+                case RuleType.GeoIp:
+                    ruleObj["geoip"] = rule.Value;
+                    break;
+                case RuleType.ProcessName:
+                    ruleObj["process_name"] = new[] { rule.Value };
+                    break;
+                case RuleType.Port:
+                    if (int.TryParse(rule.Value, out var port))
+                        ruleObj["port"] = port;
+                    break;
+                case RuleType.PortRange:
+                    ruleObj["port_range"] = new[] { rule.Value };
+                    break;
+                case RuleType.Network:
+                    ruleObj["network"] = rule.Value.ToLowerInvariant();
+                    break;
+            }
+
+            // 添加出站动作
+            ruleObj["outbound"] = rule.Action switch
+            {
+                RuleAction.Proxy => "proxy",
+                RuleAction.Direct => "direct",
+                RuleAction.Block => "block",
+                _ => "direct"
+            };
+
+            rules.Add(ruleObj);
+        }
+
+        return rules.ToArray();
     }
 }

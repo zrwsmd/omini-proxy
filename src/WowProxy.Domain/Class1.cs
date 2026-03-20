@@ -25,7 +25,8 @@ public sealed record AppSettings(
     string? BypassTunProcesses = null,
     List<SubscriptionEntry>? SubscriptionGroups = null,
     bool EnableChainProxy = false,
-    List<string>? ChainProxyNodeIds = null
+    List<string>? ChainProxyNodeIds = null,
+    List<UserRule>? UserRules = null
 )
 {
     public static AppSettings Default =>
@@ -46,6 +47,7 @@ public sealed record AppSettings(
             BypassTunProcesses: null,
             SubscriptionGroups: null,
             EnableChainProxy: false,
-            ChainProxyNodeIds: null
+            ChainProxyNodeIds: null,
+            UserRules: null
         );
 }
