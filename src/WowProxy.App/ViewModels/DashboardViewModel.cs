@@ -69,8 +69,8 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
 
     private async void OnTimerTick(object? sender, EventArgs e)
     {
-        // Only run if proxy is running
-        if (!_mainViewModel.StatusText.Contains("运行中"))
+        // Only run if proxy is running - use CoreState instead of StatusText
+        if (_mainViewModel.CoreState != WowProxy.Core.Abstractions.CoreState.Running)
         {
             if (_connections.Count > 0) _connections.Clear();
             if (_processTraffic.Count > 0) _processTraffic.Clear();
