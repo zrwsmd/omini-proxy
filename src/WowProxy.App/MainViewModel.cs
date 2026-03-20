@@ -699,25 +699,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         ClashApiSecret = secret;
 
-        _settings = new AppSettings(
-            SingBoxPath: SingBoxPath,
-            MixedPort: mixedPort,
-            EnableClashApi: EnableClashApi,
-            ClashApiPort: clashApiPort,
-            ClashApiSecret: secret,
-            EnableSystemProxy: EnableSystemProxy,
-            SubscriptionUrl: SubscriptionUrl,
-            Nodes: _nodes.Select(n => n.Node).ToList(),
-            SelectedNodeId: ActiveNode?.Id,
-            LogLevel: LogLevel,
-            EnableDirectCn: EnableDirectCn,
-            EnableTun: EnableTun,
-            TunInterfaceName: null,
-            BypassTunProcesses: null,
-            SubscriptionGroups: _subscriptionGroups.ToList(),
-            EnableChainProxy: _chainProxy.EnableChainProxy,
-            ChainProxyNodeIds: _chainProxy.GetChainNodeIds()
-        );
+        _settings = _settings with
+        {
+            SingBoxPath = SingBoxPath,
+            MixedPort = mixedPort,
+            EnableClashApi = EnableClashApi,
+            ClashApiPort = clashApiPort,
+            ClashApiSecret = secret,
+            EnableSystemProxy = EnableSystemProxy,
+            SubscriptionUrl = SubscriptionUrl,
+            Nodes = _nodes.Select(n => n.Node).ToList(),
+            SelectedNodeId = ActiveNode?.Id,
+            LogLevel = LogLevel,
+            EnableDirectCn = EnableDirectCn,
+            EnableTun = EnableTun,
+            TunInterfaceName = null,
+            BypassTunProcesses = null,
+            SubscriptionGroups = _subscriptionGroups.ToList(),
+            EnableChainProxy = _chainProxy.EnableChainProxy,
+            ChainProxyNodeIds = _chainProxy.GetChainNodeIds()
+        };
 
         await _settingsStore.SaveAsync(_settings);
 

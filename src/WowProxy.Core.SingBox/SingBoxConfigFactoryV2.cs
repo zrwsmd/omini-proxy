@@ -157,7 +157,6 @@ public sealed class SingBoxConfigFactoryV2
                 new { domain_suffix = new[] { ".cn" }, outbound = "direct" },
                 new { rule_set = "geosite-cn", outbound = "direct" },
                 new { rule_set = "geoip-cn", outbound = "direct" },
-                new { domain_suffix = new[] { "orchids.app", "posthog.com", "supabase.co" }, outbound = "direct" },
             },
             ["rule_set"] = new object[]
             {
@@ -715,12 +714,6 @@ public sealed class SingBoxConfigFactoryV2
                     break;
                 case RuleType.ProcessName:
                     ruleObj["process_name"] = new[] { rule.Value };
-                    // 进程名规则仅对 TUN 捕获的流量生效（参考旧的 BypassTunProcesses 逻辑）
-                    // 若走系统代理（mixed-in）则仍然按照出站动作处理
-                    if (settings.EnableTun)
-                    {
-                        ruleObj["inbound"] = new[] { "tun-in" };
-                    }
                     break;
                 case RuleType.Port:
                     if (int.TryParse(rule.Value, out var port))
