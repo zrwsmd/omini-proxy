@@ -40,6 +40,11 @@ public sealed class MitmProxyServer : IAsyncDisposable
         _ca = ca;
     }
 
+    static MitmProxyServer()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     public int Port => _port;
     public bool IsRunning => _listener != null;
 
@@ -222,7 +227,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
 
             var url = $"https://{host}{path}";
             var reqContentType = headers.TryGetValue("Content-Type", out var rct) ? rct : "";
-            var bodyStr = Encoding.UTF8.GetString(bodyBytes);
+            var bodyStr = DecodeBodyForCapture(bodyBytes, headers, reqContentType);
 
             var captured = new CapturedHttpMessage
             {
@@ -234,6 +239,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
                 RemoteAddress = remoteAddr,
                 RemotePort = port,
                 RequestHeaders = headers,
+                RawRequestBody = bodyStr,
                 RequestBody = bodyStr,
                 RequestContentType = reqContentType,
                 RequestSize = bodyBytes.Length,
@@ -310,7 +316,9 @@ public sealed class MitmProxyServer : IAsyncDisposable
 
                 captured.StatusCode = statusCode;
                 captured.ResponseHeaders = respHeaders;
-                captured.ResponseBody = Encoding.UTF8.GetString(respBodyBytes);
+                var responseBodyText = DecodeBodyForCapture(respBodyBytes, respHeaders, respContentType, contentAlreadyDecoded: true);
+                captured.RawResponseBody = responseBodyText;
+                captured.ResponseBody = responseBodyText;
                 captured.ResponseContentType = respContentType;
                 captured.ResponseSize = respBodyBytes.Length;
                 captured.DurationMs = sw.ElapsedMilliseconds;
@@ -362,6 +370,7 @@ public sealed class MitmProxyServer : IAsyncDisposable
 
         var bodyBytes = await ReadBodyBytesFromHeaders(stream, headers, ct);
         var reqContentType = headers.TryGetValue("Content-Type", out var rct) ? rct : "";
+        var requestBodyText = DecodeBodyForCapture(bodyBytes, headers, reqContentType);
 
         var captured = new CapturedHttpMessage
         {
@@ -373,7 +382,8 @@ public sealed class MitmProxyServer : IAsyncDisposable
             RemoteAddress = host,
             RemotePort = port,
             RequestHeaders = headers,
-            RequestBody = Encoding.UTF8.GetString(bodyBytes),
+            RawRequestBody = requestBodyText,
+            RequestBody = requestBodyText,
             RequestContentType = reqContentType,
             RequestSize = bodyBytes.Length,
         };
@@ -414,7 +424,9 @@ public sealed class MitmProxyServer : IAsyncDisposable
             var respContentType = respHeaders.TryGetValue("Content-Type", out var respCt) ? respCt : "";
             captured.StatusCode = statusCode;
             captured.ResponseHeaders = respHeaders;
-            captured.ResponseBody = Encoding.UTF8.GetString(respBodyBytes);
+            var responseBodyText = DecodeBodyForCapture(respBodyBytes, respHeaders, respContentType, contentAlreadyDecoded: true);
+            captured.RawResponseBody = responseBodyText;
+            captured.ResponseBody = responseBodyText;
             captured.ResponseContentType = respContentType;
             captured.ResponseSize = respBodyBytes.Length;
             captured.DurationMs = sw.ElapsedMilliseconds;
@@ -601,6 +613,118 @@ public sealed class MitmProxyServer : IAsyncDisposable
 
         using (decompressor) decompressor.CopyTo(output);
         return output.ToArray();
+    }
+
+    private static string DecodeBodyForCapture(
+        byte[] bodyBytes,
+        Dictionary<string, string> headers,
+        string? contentType,
+        bool contentAlreadyDecoded = false)
+    {
+        if (bodyBytes.Length == 0)
+            return string.Empty;
+
+        var decodedBytes = bodyBytes;
+        if (!contentAlreadyDecoded &&
+            headers.TryGetValue("Content-Encoding", out var contentEncoding) &&
+            !string.IsNullOrWhiteSpace(contentEncoding))
+        {
+            try
+            {
+                decodedBytes = DecompressBody(bodyBytes, contentEncoding);
+            }
+            catch
+            {
+                decodedBytes = bodyBytes;
+            }
+        }
+
+        return DecodeText(decodedBytes, contentType);
+    }
+
+    private static string DecodeText(byte[] bodyBytes, string? contentType)
+    {
+        var explicitEncoding = TryGetEncodingFromContentType(contentType);
+        if (explicitEncoding != null)
+        {
+            try
+            {
+                return explicitEncoding.GetString(bodyBytes);
+            }
+            catch
+            {
+                // Fall through to auto-detection below.
+            }
+        }
+
+        var bomEncoding = TryGetBomEncoding(bodyBytes);
+        if (bomEncoding != null)
+        {
+            try
+            {
+                return bomEncoding.GetString(bodyBytes);
+            }
+            catch
+            {
+                // Fall through to UTF-8 detection below.
+            }
+        }
+
+        try
+        {
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true)
+                .GetString(bodyBytes);
+        }
+        catch
+        {
+            return Encoding.UTF8.GetString(bodyBytes);
+        }
+    }
+
+    private static Encoding? TryGetEncodingFromContentType(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType))
+            return null;
+
+        const string charsetToken = "charset=";
+        var charsetIndex = contentType.IndexOf(charsetToken, StringComparison.OrdinalIgnoreCase);
+        if (charsetIndex < 0)
+            return null;
+
+        var charset = contentType[(charsetIndex + charsetToken.Length)..].Trim();
+        var separatorIndex = charset.IndexOf(';');
+        if (separatorIndex >= 0)
+            charset = charset[..separatorIndex];
+
+        charset = charset.Trim().Trim('"', '\'');
+        if (string.IsNullOrWhiteSpace(charset))
+            return null;
+
+        try
+        {
+            return Encoding.GetEncoding(charset);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static Encoding? TryGetBomEncoding(byte[] bytes)
+    {
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return Encoding.UTF8;
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return Encoding.Unicode;
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return Encoding.BigEndianUnicode;
+
+        if (bytes.Length >= 4 && bytes[0] == 0xFF && bytes[1] == 0xFE && bytes[2] == 0x00 && bytes[3] == 0x00)
+            return Encoding.UTF32;
+
+        return null;
     }
 
     private static byte[] BuildHttpRequest(string method, string path, string httpVersion,

@@ -33,6 +33,7 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
     private string _searchText = "";
     private int _capturedCount;
     private int _displayedCount;
+    private bool _showDecodedBody = true;
 
     /// <summary>Supported search prefixes (mitmproxy-style).</summary>
     private static readonly Dictionary<string, string> PrefixToField = new(StringComparer.OrdinalIgnoreCase)
@@ -64,8 +65,8 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         ClearCommand = new RelayCommand(_ => Clear());
         InstallCaCommand = new RelayCommand(_ => InstallCa());
         OpenCaCertCommand = new RelayCommand(_ => OpenCaCertFolder());
-        CopyRequestBodyCommand = new RelayCommand(_ => CopyRequestBody());
-        CopyResponseBodyCommand = new RelayCommand(_ => CopyResponseBody());
+        CopyRequestBodyCommand = new RelayCommand(_ => CopyDisplayedRequestBody());
+        CopyResponseBodyCommand = new RelayCommand(_ => CopyDisplayedResponseBody());
         ApplyFilterCommand = new RelayCommand(_ => ApplyFilter());
         ClearFilterCommand = new RelayCommand(_ => ClearFilter());
 
@@ -123,6 +124,30 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public string CountText => $"捕获: {CapturedCount}  显示: {DisplayedCount}";
+
+    public bool ShowDecodedBody
+    {
+        get => _showDecodedBody;
+        set
+        {
+            if (_showDecodedBody == value) return;
+            _showDecodedBody = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(ShowRawBody));
+            OnPropertyChanged(nameof(SelectedRequestBody));
+            OnPropertyChanged(nameof(SelectedResponseBody));
+        }
+    }
+
+    public bool ShowRawBody
+    {
+        get => !_showDecodedBody;
+        set
+        {
+            if (value == !_showDecodedBody) return;
+            ShowDecodedBody = !value;
+        }
+    }
 
     public CapturedHttpMessage? SelectedMessage
     {
@@ -233,7 +258,9 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         get
         {
             if (_selectedMessage == null) return "";
-            return TryFormatJson(_selectedMessage.RequestBody);
+            return ShowDecodedBody
+                ? TryFormatJson(_selectedMessage.RequestBody)
+                : _selectedMessage.RawRequestBody;
         }
     }
 
@@ -256,7 +283,9 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         get
         {
             if (_selectedMessage == null) return "";
-            return TryFormatJson(_selectedMessage.ResponseBody);
+            return ShowDecodedBody
+                ? TryFormatJson(_selectedMessage.ResponseBody)
+                : _selectedMessage.RawResponseBody;
         }
     }
 
@@ -482,6 +511,28 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             var dir = System.IO.Path.GetDirectoryName(_ca.CaCertPath);
             if (dir != null)
                 System.Diagnostics.Process.Start("explorer.exe", dir);
+        }
+        catch { }
+    }
+
+    private void CopyDisplayedRequestBody()
+    {
+        if (_selectedMessage == null) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(SelectedRequestBody);
+            StatusText = ShowDecodedBody ? "Decoded Request Body copied to clipboard" : "Raw Request Body copied to clipboard";
+        }
+        catch { }
+    }
+
+    private void CopyDisplayedResponseBody()
+    {
+        if (_selectedMessage == null) return;
+        try
+        {
+            System.Windows.Clipboard.SetText(SelectedResponseBody);
+            StatusText = ShowDecodedBody ? "Decoded Response Body copied to clipboard" : "Raw Response Body copied to clipboard";
         }
         catch { }
     }

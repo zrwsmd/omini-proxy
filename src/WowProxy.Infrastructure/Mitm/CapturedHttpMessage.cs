@@ -20,12 +20,14 @@ public sealed class CapturedHttpMessage
     public string Url { get; set; } = "";
     public string Path { get; set; } = "";
     public Dictionary<string, string> RequestHeaders { get; set; } = new();
+    public string RawRequestBody { get; set; } = "";
     public string RequestBody { get; set; } = "";
     public string RequestContentType { get; set; } = "";
 
     // Response
     public int StatusCode { get; set; }
     public Dictionary<string, string> ResponseHeaders { get; set; } = new();
+    public string RawResponseBody { get; set; } = "";
     public string ResponseBody { get; set; } = "";
     public string ResponseContentType { get; set; } = "";
 

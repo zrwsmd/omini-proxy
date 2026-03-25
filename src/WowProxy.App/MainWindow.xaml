@@ -539,6 +539,17 @@
                                     </Grid.RowDefinitions>
                                     <Button Content="复制 Request Body" HorizontalAlignment="Left" Padding="8,2" Margin="4"
                                             Command="{Binding CopyRequestBodyCommand}" FontSize="11" />
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,8,4">
+                                        <RadioButton Content="Decoded"
+                                                     GroupName="MitmRequestBodyMode"
+                                                     IsChecked="{Binding ShowDecodedBody, Mode=TwoWay}"
+                                                     Margin="0,0,8,0"
+                                                     VerticalAlignment="Center" />
+                                        <RadioButton Content="Raw"
+                                                     GroupName="MitmRequestBodyMode"
+                                                     IsChecked="{Binding ShowRawBody, Mode=TwoWay}"
+                                                     VerticalAlignment="Center" />
+                                    </StackPanel>
                                     <TextBox Grid.Row="1" Text="{Binding SelectedRequestBody, Mode=OneWay}" 
                                              IsReadOnly="True" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
@@ -559,6 +570,17 @@
                                     </Grid.RowDefinitions>
                                     <Button Content="复制 Response Body" HorizontalAlignment="Left" Padding="8,2" Margin="4"
                                             Command="{Binding CopyResponseBodyCommand}" FontSize="11" />
+                                    <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,8,4">
+                                        <RadioButton Content="Decoded"
+                                                     GroupName="MitmResponseBodyMode"
+                                                     IsChecked="{Binding ShowDecodedBody, Mode=TwoWay}"
+                                                     Margin="0,0,8,0"
+                                                     VerticalAlignment="Center" />
+                                        <RadioButton Content="Raw"
+                                                     GroupName="MitmResponseBodyMode"
+                                                     IsChecked="{Binding ShowRawBody, Mode=TwoWay}"
+                                                     VerticalAlignment="Center" />
+                                    </StackPanel>
                                     <TextBox Grid.Row="1" Text="{Binding SelectedResponseBody, Mode=OneWay}" 
                                              IsReadOnly="True" TextWrapping="Wrap"
                                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
