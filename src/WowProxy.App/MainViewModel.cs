@@ -22,6 +22,8 @@ namespace WowProxy.App;
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private const int DefaultClashApiPort = 9090;
+
     private readonly JsonSettingsStore _settingsStore;
     private readonly WindowsSystemProxy _systemProxy;
     private readonly StringBuilder _logs = new();
@@ -54,6 +56,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool _enableTun;
     private string _selectedGroup = "全部";
     private readonly ObservableCollection<string> _nodeGroups = new() { "全部" };
+    private int _runtimeClashApiPort = DefaultClashApiPort;
+    private string? _runtimeClashApiSecret;
     private readonly ObservableCollection<SubscriptionEntry> _subscriptionGroups = new();
 
     public MainViewModel(JsonSettingsStore settingsStore, WindowsSystemProxy systemProxy, AppSettings settings)
@@ -151,20 +155,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public RelayCommand DeleteGroupCommand { get; }
 
     public string? SingBoxPath => _settingsViewModel.SingBoxPath;
-    public bool EnableClashApi => _settingsViewModel.EnableClashApi;
-    public string? ClashApiSecret
-    {
-        get => _settingsViewModel.ClashApiSecret;
-        set => _settingsViewModel.ClashApiSecret = value;
-    }
-    public int ClashApiPort
-    {
-        get
-        {
-            int.TryParse(_settingsViewModel.ClashApiPortText, out var port);
-            return port;
-        }
-    }
+    public bool EnableClashApi => true;
+    public string? ClashApiSecret => _runtimeClashApiSecret;
+    public int ClashApiPort => _runtimeClashApiPort;
 
     public void NotifySettingsChanged()
     {
@@ -642,7 +635,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        if (!TryParsePorts(out var mixedPort, out var clashApiPort, out var error))
+        if (!TryParsePorts(out var mixedPort, out var error))
         {
             CoreState = CoreState.Faulted;
             StatusText = error;
@@ -693,19 +686,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, BuildSelectedNodeSummary(ActiveNode.Node)));
         }
 
-        var secret = EnableClashApi
-            ? string.IsNullOrWhiteSpace(ClashApiSecret) ? Guid.NewGuid().ToString("N") : ClashApiSecret!.Trim()
-            : null;
+        var clashApiPort = ResolveClashApiPort(DefaultClashApiPort);
+        _runtimeClashApiPort = clashApiPort;
+        _runtimeClashApiSecret = Guid.NewGuid().ToString("N");
 
-        ClashApiSecret = secret;
+        if (clashApiPort == DefaultClashApiPort)
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Info, $"Clash API enabled at 127.0.0.1:{clashApiPort}"));
+        }
+        else
+        {
+            AppendLog(new CoreLogLine(DateTimeOffset.Now, CoreLogLevel.Warning, $"Clash API default port 127.0.0.1:{DefaultClashApiPort} is busy, switched to 127.0.0.1:{clashApiPort}"));
+        }
 
         _settings = _settings with
         {
             SingBoxPath = SingBoxPath,
             MixedPort = mixedPort,
-            EnableClashApi = EnableClashApi,
-            ClashApiPort = clashApiPort,
-            ClashApiSecret = secret,
+            EnableClashApi = true,
+            ClashApiPort = _runtimeClashApiPort,
+            ClashApiSecret = _runtimeClashApiSecret,
             EnableSystemProxy = EnableSystemProxy,
             SubscriptionUrl = SubscriptionUrl,
             Nodes = _nodes.Select(n => n.Node).ToList(),
@@ -1365,6 +1365,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 await _core.DisposeAsync();
                 _core = null;
             }
+            _runtimeClashApiPort = DefaultClashApiPort;
+            _runtimeClashApiSecret = null;
             CoreState = CoreState.Stopped;
             StatusText = "已停止";
         }
@@ -1412,10 +1414,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private bool TryParsePorts(out int mixedPort, out int clashApiPort, out string error)
+    private bool TryParsePorts(out int mixedPort, out string error)
     {
         mixedPort = 0;
-        clashApiPort = 0;
         error = string.Empty;
 
         if (!int.TryParse(_settingsViewModel.MixedPortText, out mixedPort) || mixedPort is < 1 or > 65535)
@@ -1424,13 +1425,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
-        if (!int.TryParse(_settingsViewModel.ClashApiPortText, out clashApiPort) || clashApiPort is < 1 or > 65535)
+        return true;
+    }
+
+    private static int ResolveClashApiPort(int preferredPort)
+    {
+        if (IsLocalPortAvailable(preferredPort))
         {
-            error = "Clash API 端口无效";
-            return false;
+            return preferredPort;
         }
 
-        return true;
+        var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+        listener.Start();
+        try
+        {
+            return ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+        }
+        finally
+        {
+            listener.Stop();
+        }
     }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)

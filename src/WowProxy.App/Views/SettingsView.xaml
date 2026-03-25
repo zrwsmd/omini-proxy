@@ -46,8 +46,6 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -58,14 +56,6 @@
                 <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="sing-box 路径" />
                 <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,8,8" Text="{Binding SingBoxPath, UpdateSourceTrigger=PropertyChanged}" />
                 <Button Grid.Row="0" Grid.Column="2" Margin="0,0,0,8" Padding="12,4" Content="浏览" Command="{Binding BrowseSingBoxCommand}" />
-
-                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,4,0,8">
-                    <CheckBox Content="启用 Clash API" VerticalAlignment="Center" IsChecked="{Binding EnableClashApi}" />
-                    <TextBlock Text="端口" VerticalAlignment="Center" Margin="16,0,8,0" />
-                    <TextBox Width="80" Text="{Binding ClashApiPortText, UpdateSourceTrigger=PropertyChanged}" />
-                    <TextBlock Text="Secret" VerticalAlignment="Center" Margin="16,0,8,0" />
-                    <TextBox Width="200" Text="{Binding ClashApiSecret, UpdateSourceTrigger=PropertyChanged}" />
-                </StackPanel>
             </Grid>
         </GroupBox>
     </Grid>

@@ -1,4 +1,4 @@
-<Window x:Class="WowProxy.App.MainWindow"
+﻿<Window x:Class="WowProxy.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -101,12 +101,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="当前内核: " VerticalAlignment="Center" FontWeight="Bold" />
-                    <ComboBox Margin="8,0,0,0" Width="120" SelectedIndex="0">
-                        <ComboBoxItem Content="sing-box" />
-                    </ComboBox>
-                    
-                    <TextBlock Text="状态: " VerticalAlignment="Center" Margin="24,0,0,0" FontWeight="Bold" />
+                    <TextBlock Text="状态: " VerticalAlignment="Center" FontWeight="Bold" />
                     <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Margin="8,0,0,0">
                         <TextBlock.Foreground>
                             <Binding Path="StatusText" Converter="{StaticResource StatusColorConverter}" />
