@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
+using WowProxy.App;
 using WowProxy.Infrastructure.Mitm;
 
 namespace WowProxy.App.ViewModels;
@@ -17,10 +18,12 @@ namespace WowProxy.App.ViewModels;
 public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly MitmCertificateAuthority _ca;
+    private readonly MainViewModel _mainViewModel;
     private MitmProxyServer? _server;
     private bool _isRunning;
     private int _mitmPort = 10811;
     private string _mitmPortText = "10811";
+    private bool _didSwitchSystemProxy;
     private CapturedHttpMessage? _selectedMessage;
     private string _statusText = "就绪 — 输入搜索条件过滤，如 ~d openai 或 ~b system，留空显示全部";
     private bool _caInstalled;
@@ -56,8 +59,9 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         ["~all"]     = "all",
     };
 
-    public MitmCaptureViewModel()
+    public MitmCaptureViewModel(MainViewModel mainViewModel)
     {
+        _mainViewModel = mainViewModel;
         _ca = new MitmCertificateAuthority();
         CapturedMessages = new ObservableCollection<CapturedHttpMessage>();
 
@@ -323,6 +327,20 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        // Check if the desired port is available; if not, find a free one
+        if (!IsLocalPortAvailable(port))
+        {
+            var fallbackPort = FindAvailablePort();
+            if (fallbackPort <= 0)
+            {
+                StatusText = $"端口 {port} 被占用，且无法找到可用端口";
+                return;
+            }
+            StatusText = $"端口 {port} 被占用，已自动切换到 {fallbackPort}";
+            port = fallbackPort;
+            MitmPortText = port.ToString();
+        }
+
         _mitmPort = port;
 
         try
@@ -330,10 +348,29 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
             _server = new MitmProxyServer(_ca);
             _server.OnMessageCaptured += OnMessageCapturedCallback;
             _server.OnLog += OnLogCallback;
+
+            // If sing-box is running, set it as upstream proxy
+            if (_mainViewModel.IsCoreRunning)
+            {
+                var mixedPort = _mainViewModel.RuntimeMixedPort;
+                _server.SetUpstreamProxy("127.0.0.1", mixedPort);
+            }
+
             _server.Start(port);
 
+            // Switch system proxy to MITM port so browser traffic goes through capture
+            _didSwitchSystemProxy = false;
+            if (_mainViewModel.IsCoreRunning && _mainViewModel.EnableSystemProxy)
+            {
+                _mainViewModel.SwitchSystemProxyTo(port);
+                _didSwitchSystemProxy = true;
+            }
+
             IsRunning = true;
-            StatusText = $"抓包运行中 — 127.0.0.1:{port} — 输入搜索条件过滤";
+            var upstreamInfo = _server.HasUpstreamProxy
+                ? $"上游代理: 127.0.0.1:{_mainViewModel.RuntimeMixedPort}"
+                : "直连模式（sing-box 未运行）";
+            StatusText = $"抓包运行中 — 127.0.0.1:{port} — {upstreamInfo}";
         }
         catch (Exception ex)
         {
@@ -350,8 +387,40 @@ public class MitmCaptureViewModel : INotifyPropertyChanged, IDisposable
         _ = _server.StopAsync();
         _server = null;
 
+        // Restore system proxy back to sing-box mixed port
+        if (_didSwitchSystemProxy)
+        {
+            _mainViewModel.RestoreSystemProxyToMixedPort();
+            _didSwitchSystemProxy = false;
+        }
+
         IsRunning = false;
         StatusText = "已停止";
+    }
+
+    private static bool IsLocalPortAvailable(int port)
+    {
+        try
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, port);
+            listener.Start();
+            listener.Stop();
+            return true;
+        }
+        catch { return false; }
+    }
+
+    private static int FindAvailablePort()
+    {
+        try
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+        catch { return -1; }
     }
 
     public void SetUpstreamProxy(int singBoxMixedPort)

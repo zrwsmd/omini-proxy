@@ -119,7 +119,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _dashboard = new DashboardViewModel(this);
         _settingsViewModel = new SettingsViewModel(this, settings);
         _chainProxy = new ChainProxyViewModel(this, settings.EnableChainProxy, settings.ChainProxyNodeIds?.ToList());
-        _mitmCapture = new MitmCaptureViewModel();
+        _mitmCapture = new MitmCaptureViewModel(this);
         _userRules = new UserRulesViewModel(settings.UserRules, () => _ = PersistSelectionAsync());
         
         // 初始化节点健康监控
@@ -158,6 +158,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool EnableClashApi => true;
     public string? ClashApiSecret => _runtimeClashApiSecret;
     public int ClashApiPort => _runtimeClashApiPort;
+    public bool IsCoreRunning => _coreState == CoreState.Running;
+    public int RuntimeMixedPort => _settings.MixedPort;
 
     public void NotifySettingsChanged()
     {
@@ -1328,6 +1330,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         StatusText = "正在测试速度...";
         await NodeTester.TestSpeedAsync(_nodes, SingBoxPath);
         StatusText = "速度测试完成";
+    }
+
+    /// <summary>
+    /// Switch system proxy to a specific port (used by MITM capture).
+    /// </summary>
+    public void SwitchSystemProxyTo(int port)
+    {
+        if (EnableSystemProxy)
+            _systemProxy.EnableGlobalProxy($"127.0.0.1:{port}");
+    }
+
+    /// <summary>
+    /// Restore system proxy back to sing-box mixed port (used when MITM capture stops).
+    /// </summary>
+    public void RestoreSystemProxyToMixedPort()
+    {
+        if (EnableSystemProxy && IsCoreRunning)
+            _systemProxy.EnableGlobalProxy($"127.0.0.1:{_settings.MixedPort}");
     }
 
     private static bool IsLocalPortAvailable(int port)
