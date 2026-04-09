@@ -82,10 +82,12 @@ public partial class MapTrafficRadarControl : Canvas
         Children.Add(_dotLayer);
 
         SizeChanged += (_, _) => OnResize();
+        IsVisibleChanged += (_, _) => UpdateAnimationState();
+        Loaded += (_, _) => UpdateAnimationState();
+        Unloaded += (_, _) => _animTimer?.Stop();
 
         _animTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
         _animTimer.Tick += OnAnimTick;
-        _animTimer.Start();
     }
 
     // ─── Resize ──────────────────────────────────────────────────────────────────
@@ -273,7 +275,14 @@ public partial class MapTrafficRadarControl : Canvas
 
     private void OnAnimTick(object? sender, EventArgs e)
     {
-        if (ActualWidth < 10 || ActualHeight < 10) return;
+        if (!IsVisible || ActualWidth < 10 || ActualHeight < 10) return;
+
+        if (Connections is null || Connections.Count == 0)
+        {
+            _arcLayer.Children.Clear();
+            _dotLayer.Children.Clear();
+            return;
+        }
 
         // Ensure sub-canvas sizes are up to date
         if (_arcLayer.Width != ActualWidth)
@@ -541,9 +550,39 @@ public partial class MapTrafficRadarControl : Canvas
             old.CollectionChanged -= ctrl.Connections_CollectionChanged;
         if (e.NewValue is ObservableCollection<ConnectionModel> nw)
             nw.CollectionChanged += ctrl.Connections_CollectionChanged;
+        ctrl.UpdateAnimationState();
     }
 
-    private void Connections_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e) { }
+    private void Connections_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (Connections is null || Connections.Count == 0)
+        {
+            _arcLayer.Children.Clear();
+            _dotLayer.Children.Clear();
+        }
+
+        UpdateAnimationState();
+    }
+
+    private void UpdateAnimationState()
+    {
+        var shouldAnimate = IsLoaded && IsVisible && Connections is { Count: > 0 };
+
+        if (shouldAnimate)
+        {
+            if (!_animTimer.IsEnabled)
+            {
+                _animTimer.Start();
+            }
+
+            return;
+        }
+
+        if (_animTimer.IsEnabled)
+        {
+            _animTimer.Stop();
+        }
+    }
 
     // ─── World Landmass Polygons ──────────────────────────────────────────────────
     // Detailed outlines defined in MapTrafficRadarControl.MapData.cs (partial class).

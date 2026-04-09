@@ -2,9 +2,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using WowProxy.App.Models;
 using WowProxy.Core.SingBox;
-using WowProxy.Infrastructure;
 
 namespace WowProxy.App;
 
@@ -53,19 +53,17 @@ internal static class NodeTester
             Arguments = $"run -c \"{tempConfigFile}\"",
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
+            RedirectStandardOutput = false,
+            RedirectStandardError = false,
         };
 
         try
         {
             process.Start();
-            // Wait a bit for sing-box to start listening
-            await Task.Delay(1000);
-
-            if (process.HasExited)
+            var isReady = await WaitForPortListeningAsync(BasePort, process, TimeSpan.FromSeconds(5));
+            if (!isReady)
             {
-                // Failed to start
+                await MarkBatchFailedAsync(nodes, isSpeedTest);
                 return;
             }
 
@@ -89,20 +87,36 @@ internal static class NodeTester
                     }
                     catch
                     {
-                        if (isSpeedTest) node.Speed = -1;
-                        else node.Latency = -1;
+                        if (isSpeedTest)
+                        {
+                            await SetSpeedAsync(node, -1);
+                        }
+                        else
+                        {
+                            await SetLatencyAsync(node, -1);
+                        }
                     }
                 }));
             }
 
             await Task.WhenAll(tasks);
         }
+        catch
+        {
+            await MarkBatchFailedAsync(nodes, isSpeedTest);
+        }
         finally
         {
-            if (!process.HasExited)
+            try
             {
-                process.Kill();
-                await process.WaitForExitAsync();
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                    await process.WaitForExitAsync();
+                }
+            }
+            catch
+            {
             }
             
             try { File.Delete(tempConfigFile); } catch { }
@@ -128,11 +142,11 @@ internal static class NodeTester
 
         if (response.IsSuccessStatusCode)
         {
-            node.Latency = (int)sw.ElapsedMilliseconds;
+            await SetLatencyAsync(node, (int)sw.ElapsedMilliseconds);
         }
         else
         {
-            node.Latency = -1;
+            await SetLatencyAsync(node, -1);
         }
     }
 
@@ -141,7 +155,7 @@ internal static class NodeTester
         // If latency is bad, skip speed test to save time
         if (node.Latency == -1)
         {
-            node.Speed = 0;
+            await SetSpeedAsync(node, 0);
             return;
         }
 
@@ -161,7 +175,7 @@ internal static class NodeTester
         
         if (!response.IsSuccessStatusCode)
         {
-            node.Speed = 0;
+            await SetSpeedAsync(node, 0);
             return;
         }
 
@@ -184,7 +198,60 @@ internal static class NodeTester
         if (seconds > 0)
         {
             var mb = totalBytes / 1024.0 / 1024.0;
-            node.Speed = Math.Round(mb / seconds, 2);
+            await SetSpeedAsync(node, Math.Round(mb / seconds, 2));
         }
+    }
+
+    private static async Task<bool> WaitForPortListeningAsync(int port, Process process, TimeSpan timeout)
+    {
+        var sw = Stopwatch.StartNew();
+
+        while (sw.Elapsed < timeout)
+        {
+            if (process.HasExited)
+            {
+                return false;
+            }
+
+            try
+            {
+                using var tcp = new TcpClient();
+                using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+                await tcp.ConnectAsync(IPAddress.Loopback, port, cts.Token);
+                return true;
+            }
+            catch
+            {
+                await Task.Delay(100);
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task MarkBatchFailedAsync(IEnumerable<ProxyNodeModel> nodes, bool isSpeedTest)
+    {
+        var tasks = nodes.Select(node => isSpeedTest
+            ? SetSpeedAsync(node, -1)
+            : SetLatencyAsync(node, -1));
+        await Task.WhenAll(tasks);
+    }
+
+    private static Task SetLatencyAsync(ProxyNodeModel node, int? value)
+        => RunOnUiThreadAsync(() => node.Latency = value);
+
+    private static Task SetSpeedAsync(ProxyNodeModel node, double? value)
+        => RunOnUiThreadAsync(() => node.Speed = value);
+
+    private static Task RunOnUiThreadAsync(Action action)
+    {
+        var app = System.Windows.Application.Current;
+        if (app?.Dispatcher is null || app.Dispatcher.CheckAccess())
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        return app.Dispatcher.InvokeAsync(action).Task;
     }
 }

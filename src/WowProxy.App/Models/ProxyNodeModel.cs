@@ -68,7 +68,10 @@ public class ProxyNodeModel : INotifyPropertyChanged
         get => _speed;
         set
         {
-            if (Math.Abs((_speed ?? 0) - (value ?? 0)) > 0.01)
+            var changed = _speed.HasValue != value.HasValue
+                || (_speed.HasValue && value.HasValue && Math.Abs(_speed.Value - value.Value) > 0.01);
+
+            if (changed)
             {
                 _speed = value;
                 OnPropertyChanged();

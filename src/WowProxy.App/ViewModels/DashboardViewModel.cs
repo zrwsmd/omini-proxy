@@ -19,6 +19,7 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
     private string _filterText = string.Empty;
     private readonly object _lock = new();
     private readonly object _processLock = new();
+    private bool _refreshInProgress;
 
     public DashboardViewModel(MainViewModel mainViewModel)
     {
@@ -69,6 +70,13 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
 
     private async void OnTimerTick(object? sender, EventArgs e)
     {
+        if (_refreshInProgress)
+        {
+            return;
+        }
+
+        _refreshInProgress = true;
+
         // Only run if proxy is running - use CoreState instead of StatusText
         if (_mainViewModel.CoreState != WowProxy.Core.Abstractions.CoreState.Running)
         {
@@ -76,6 +84,7 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
             if (_processTraffic.Count > 0) _processTraffic.Clear();
             _closedProcessTraffic.Clear();
             _apiClient = null; // Reset client when stopped
+            _refreshInProgress = false;
             return;
         }
 
@@ -94,7 +103,10 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
         try
         {
             var response = await _apiClient.GetConnectionsAsync();
-            if (response is null) return;
+            if (response is null)
+            {
+                return;
+            }
 
             UpdateConnections(response.Connections);
             UpdateProcessTraffic(response.Connections);
@@ -102,6 +114,10 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
         catch
         {
             // Ignore errors
+        }
+        finally
+        {
+            _refreshInProgress = false;
         }
     }
 
