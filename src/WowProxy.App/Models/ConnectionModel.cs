@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using WowProxy.Core.Abstractions.Models.Clash;
 
 namespace WowProxy.App.Models;
@@ -9,13 +10,13 @@ public class ConnectionModel : INotifyPropertyChanged
     private readonly Connection _connection;
     private long _uploadSpeed;
     private long _downloadSpeed;
+    private int _locationResolveStarted;
 
     public ConnectionModel(Connection connection)
     {
         _connection = connection;
         LastUpload = connection.Upload;
         LastDownload = connection.Download;
-        _ = ResolveLocationAsync();
     }
 
     public string Id => _connection.Id;
@@ -64,6 +65,33 @@ public class ConnectionModel : INotifyPropertyChanged
     {
         get => _country;
         set { if (_country != value) { _country = value; OnPropertyChanged(); } }
+    }
+
+    public void EnsureLocationResolved()
+    {
+        if (!string.IsNullOrWhiteSpace(Country))
+        {
+            return;
+        }
+
+        var currentProcessName = System.IO.Path.GetFileName(Environment.ProcessPath);
+        if (!string.IsNullOrWhiteSpace(currentProcessName)
+            && string.Equals(Process, currentProcessName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (Host.Contains("ip-api.com", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _locationResolveStarted, 1) == 1)
+        {
+            return;
+        }
+
+        _ = ResolveLocationAsync();
     }
 
     private async Task ResolveLocationAsync()

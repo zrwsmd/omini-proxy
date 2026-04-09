@@ -88,6 +88,12 @@ public class DashboardViewModel : INotifyPropertyChanged, IDisposable
             return;
         }
 
+        if (_mainViewModel.MainTabSelectedIndex is < 2 or > 4)
+        {
+            _refreshInProgress = false;
+            return;
+        }
+
         if (_apiClient is null)
         {
             // 如果用户未启用 Clash API，则默认使用 9090 (假设 sing-box 配置中开启了)

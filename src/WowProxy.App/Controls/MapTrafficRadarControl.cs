@@ -295,6 +295,11 @@ public partial class MapTrafficRadarControl : Canvas
             .Take(25)
             .ToList() ?? new();
 
+        foreach (var conn in _lastSnapshot.Take(8))
+        {
+            conn.EnsureLocationResolved();
+        }
+
         DrawArcs();
         TickPackets();
     }

@@ -14,10 +14,16 @@ public class GeoIpResolutionService
 
     private readonly HttpClient _httpClient;
     private readonly ConcurrentDictionary<string, GeoIpInfo> _cache = new();
+    private readonly ConcurrentDictionary<string, Task<GeoIpInfo?>> _inflight = new();
 
     private GeoIpResolutionService()
     {
-        _httpClient = new HttpClient
+        var handler = new HttpClientHandler
+        {
+            UseProxy = false
+        };
+
+        _httpClient = new HttpClient(handler)
         {
             Timeout = TimeSpan.FromSeconds(5)
         };
@@ -37,6 +43,23 @@ public class GeoIpResolutionService
             return cachedInfo;
         }
 
+        var task = _inflight.GetOrAdd(ip, ResolveCoreAsync);
+
+        try
+        {
+            return await task;
+        }
+        finally
+        {
+            if (task.IsCompleted)
+            {
+                _inflight.TryRemove(ip, out _);
+            }
+        }
+    }
+
+    private async Task<GeoIpInfo?> ResolveCoreAsync(string ip)
+    {
         try
         {
             // Using ip-api.com free tier (no API key required)
@@ -52,15 +75,12 @@ public class GeoIpResolutionService
                     Latitude = result.Lat,
                     Longitude = result.Lon
                 };
-                
+
                 _cache.TryAdd(ip, info);
                 return info;
             }
-            else
-            {
-                // Cache negative results briefly to prevent API spamming
-                _cache.TryAdd(ip, new GeoIpInfo { Ip = ip }); 
-            }
+
+            _cache.TryAdd(ip, new GeoIpInfo { Ip = ip });
         }
         catch (Exception)
         {
